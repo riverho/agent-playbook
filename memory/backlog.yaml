@@ -18,10 +18,12 @@ tasks:
     updated_at: '2026-06-10T15:13:43.121Z'
   - id: T2
     title: Record one durable project fact in memory/project-memory.md
-    status: todo
+    status: done
     skill: run-task
     priority: 2
     acceptance_checks:
       - node scripts/pb.mjs validate
     notes: Replace the "(none yet)" placeholder with one real, non-obvious fact about this project.
     created: '2026-06-09'
+    claimed_at: '2026-06-10T16:52:31.634Z'
+    updated_at: '2026-06-10T16:53:02.368Z'

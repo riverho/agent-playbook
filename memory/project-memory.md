@@ -26,4 +26,6 @@ This file is read on every session, right after `playbook.yaml`. Keep it short a
 _(Add durable, non-obvious facts about THIS project here — constraints, conventions,
 owners, external systems. Start empty; grow it as you learn.)_
 
-- (none yet)
+1. `pb record --status done` re-runs the task's `acceptance_checks` and refuses to record if any fail — "done" is enforced by exit code, not declared by prose.
+2. The release skill (`skills/release/`) is the canonical way to cut versions; follow `processes/release.yaml` and use `gh release create` to publish to GitHub. Hosted at https://github.com/riverho/agent-playbook.
+3. `gh` CLI is installed at `%USERPROFILE%\bin\gh.exe`; PATH must include `%USERPROFILE%\bin` — add it with `$env:PATH += ";$env:USERPROFILE\bin"` in each session until a permanent PATH update is applied.
