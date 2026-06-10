@@ -1,0 +1,140 @@
+# ============================================================================
+#  playbook.yaml — THE MASTER (the "fixation")
+# ----------------------------------------------------------------------------
+#  This file is the single anchor every agent re-reads at the start of every
+#  loop iteration. It indexes everything else (skills, processes, scripts,
+#  memory, artifacts) and defines the loop contract and guardrails.
+#
+#  Rule of the fixation: nothing supersedes this file. If another doc and this
+#  file disagree, this file wins — then fix the other doc.
+#
+#  Everything referenced here is RELATIVE to this folder. The whole playbook is
+#  carry-on: copy the folder anywhere and it still works.
+# ============================================================================
+
+name: agent-playbook
+version: 0.2.0
+description: >-
+  A portable, agent-first playbook. Agents loop without friction: orient on the
+  master, pick a task, run the matching skill/process, verify with executable
+  acceptance checks, record, and roll records up into human reports — all
+  inside this folder.
+
+# Read this FIRST, every session. It teaches any agent how to operate the playbook.
+entry: SKILL.md
+
+# ----------------------------------------------------------------------------
+# fixation — invariants. Never violate these. They are what keeps the loop honest.
+# ----------------------------------------------------------------------------
+fixation:
+  - Re-anchor to playbook.yaml at the start of every loop iteration. The master wins.
+  - Act only inside this folder. The playbook is self-contained (carry-on).
+  - Skills-first. If a skill in skills/index.yaml fits the task, follow it and its
+    process. Only improvise when no skill exists — then write one (see SKILL.md).
+  - Done means the task's acceptance_checks (shell commands) exit 0. `pb record
+    --status done` runs them and refuses on failure. Exit codes, not prose.
+  - Record every iteration to memory/journal.ndjson via `pb record`. No silent work.
+  - Agent-first, human-second. Work against the machine records; roll them up into
+    artifacts/reports/ for humans. Never hand-edit the journal.
+  - Keep guardrails green. Run `pb validate` before and after acting.
+
+# ----------------------------------------------------------------------------
+# paths — canonical layout. The CLI resolves everything relative to this file's
+# folder, so the playbook stays relocatable.
+# ----------------------------------------------------------------------------
+paths:
+  root: .
+  scripts: scripts
+  processes: processes
+  skills: skills
+  memory: memory
+  artifacts: artifacts
+  reports: artifacts/reports
+
+# ----------------------------------------------------------------------------
+# index — the master index of every moving part. `pb list` reads from the
+# index files below.
+# ----------------------------------------------------------------------------
+index:
+  cli: scripts/pb.mjs
+  processes_index: processes/index.yaml
+  skills_index: skills/index.yaml
+  memory:
+    project_memory: memory/project-memory.md   # durable numbered operating rules
+    backlog: memory/backlog.yaml               # the task queue the loop pulls from
+    journal: memory/journal.ndjson             # append-only machine record (agent-first)
+  artifacts:
+    reports: artifacts/reports                 # human-facing rollups (generated)
+
+# ----------------------------------------------------------------------------
+# loop — the friction-free contract. One command per step. SKILL.md expands this.
+# ----------------------------------------------------------------------------
+loop:
+  description: Orient → Select → Act → Verify → Record → Report → repeat.
+  steps:
+    - id: orient
+      do: Re-anchor. Read this master + memory/project-memory.md, then snapshot state.
+      command: node scripts/pb.mjs status
+    - id: select
+      do: Pick the next actionable task and learn which skill/process to use.
+      command: node scripts/pb.mjs next --claim
+    - id: act
+      do: Open skills/<skill>/SKILL.md and follow processes/<process>.yaml step by step.
+      command: null   # human/agent work, guided by the skill + process
+    - id: verify
+      do: Run structural guardrails plus the task's executable acceptance_checks.
+      command: node scripts/pb.mjs validate && node scripts/pb.mjs validate --task <id>
+    - id: record
+      do: Append a structured entry. Recording done re-runs the checks and refuses on failure.
+      command: node scripts/pb.mjs record --task <id> --action <action> --status <status> --notes "<what+why>"
+    - id: report
+      do: Periodically roll the journal up into a human-readable report artifact.
+      command: node scripts/pb.mjs report
+
+# ----------------------------------------------------------------------------
+# guardrails — lightweight. `pb validate` enforces the structural ones; the rules
+# below are the human-judgment ones every agent is expected to honor.
+# ----------------------------------------------------------------------------
+guardrails:
+  validate_command: node scripts/pb.mjs validate
+  rules:
+    - The master, both index files, and every file they reference must exist and parse.
+    - Every skill must point to a real process; every backlog item must have a valid status.
+    - acceptance_checks are executable shell commands (cwd = playbook root, exit 0 = pass).
+      Give every task checks where possible — a task without them is verified on honor only.
+    - Every journal line must be valid JSON (use `pb record`, never hand-edit).
+    - One task in_progress at a time per agent. Finish or block it before claiming another.
+    - Prefer the smallest change that satisfies the task's acceptance_checks.
+  allowed_statuses: [todo, in_progress, blocked, done]
+
+# ----------------------------------------------------------------------------
+# hardening — how the playbook survives context loss (long sessions, compaction,
+# handoff). Principle: context loss must never mean work loss. State lives on
+# disk; re-anchor cheaply; auto-re-inject. See skills/harden.
+# ----------------------------------------------------------------------------
+hardening:
+  principle: Externalize state to disk + re-anchor cheaply + auto-re-inject the anchor.
+  commands:
+    anchor: node scripts/pb.mjs anchor          # tiny constitution — safe to re-inject every turn
+    checkpoint: node scripts/pb.mjs checkpoint   # heartbeat + drift detection
+  re_anchor: Call anchor at the start of every iteration and after every few actions.
+  auto_inject:
+    # Wire the runtime to call these so the agent never has to remember.
+    claude_code:
+      SessionStart: node scripts/pb.mjs anchor
+      UserPromptSubmit: node scripts/pb.mjs anchor --brief
+      PreCompact: node scripts/pb.mjs checkpoint --snapshot
+    other_runtimes: Wrap each turn (or a periodic tick) with `node scripts/pb.mjs anchor --brief`; on resume run checkpoint.
+
+# ----------------------------------------------------------------------------
+# reporting — how agent-first records become human artifacts.
+# ----------------------------------------------------------------------------
+reporting:
+  source: memory/journal.ndjson
+  backlog: memory/backlog.yaml
+  output_dir: artifacts/reports
+  filename: report-<date>.md
+  contains:
+    - Summary counts (done / in_progress / blocked / todo).
+    - Per-task timeline built from journal entries (with check outcomes).
+    - Open backlog with priority, skill, and check count per task.

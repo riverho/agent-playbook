@@ -1,0 +1,27 @@
+# memory/backlog.yaml — the task queue the loop pulls from.
+# Managed by `pb` (next --claim / record). Edit by hand to add tasks.
+# status: todo | in_progress | blocked | done   priority: 1 = highest
+# acceptance_checks: shell commands that must exit 0 before `record --status done` succeeds.
+tasks:
+  - id: T1
+    title: Smoke-test the playbook loop end to end
+    status: done
+    skill: run-task
+    priority: 1
+    acceptance_checks:
+      - node scripts/pb.mjs validate
+    notes: >-
+      Run status -> next --claim -> record -> report -> validate. Confirms the engine works on a
+      fresh clone. Recording done will run the check above automatically.
+    created: '2026-06-09'
+    claimed_at: '2026-06-10T15:12:27.219Z'
+    updated_at: '2026-06-10T15:13:43.121Z'
+  - id: T2
+    title: Record one durable project fact in memory/project-memory.md
+    status: todo
+    skill: run-task
+    priority: 2
+    acceptance_checks:
+      - node scripts/pb.mjs validate
+    notes: Replace the "(none yet)" placeholder with one real, non-obvious fact about this project.
+    created: '2026-06-09'

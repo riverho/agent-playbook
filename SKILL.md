@@ -1,0 +1,78 @@
+---
+description: Entry point for operating the Agent-Playbook loop. Teaches agents to orient on playbook.yaml, select tasks, follow skills/processes, verify with executable checks, record, and report.
+---
+
+# Playbook Skill — read this first
+
+This is the entry point for **any** agent working in this folder. It teaches you how to operate the playbook so every agent behaves the same way and the work loops without friction.
+
+> The master is `playbook.yaml`. It is the fixation — the single anchor everything points back to. If anything here disagrees with `playbook.yaml`, the master wins.
+
+## Startup (do this every session)
+
+1. Read `playbook.yaml` — the master: index, loop contract, guardrails, paths.
+2. Read `memory/project-memory.md` — durable operating rules and project facts.
+3. Run `node scripts/pb.mjs status` — orient on backlog + recent journal + guardrail state.
+
+(First time on a fresh clone, run `npm install` once, then `node scripts/pb.mjs bootstrap`.
+Use `node scripts/pb.mjs init` only to hydrate missing runtime files.)
+
+## The loop (one command per step)
+
+Repeat this until the backlog is clear:
+
+| Step | What | Command |
+| --- | --- | --- |
+| 1. Orient | Re-anchor + snapshot state | `node scripts/pb.mjs status` |
+| 2. Select | Pick + claim the next task | `node scripts/pb.mjs next --claim` |
+| 3. Act | Follow the skill → process | open `skills/<skill>/SKILL.md`, then `processes/<process>.yaml` |
+| 4. Verify | Structure + the task's checks | `node scripts/pb.mjs validate` then `validate --task <id>` |
+| 5. Record | Log the outcome (enforced) | `node scripts/pb.mjs record --task <id> --action <a> --status <done\|blocked> --notes "..."` |
+| 6. Report | Roll up for humans | `node scripts/pb.mjs report` |
+
+Then go back to step 1.
+
+## Done is enforced, not declared
+
+A task's `acceptance_checks` are **shell commands** (cwd = playbook root, exit 0 = pass).
+`pb next` prints them when you claim; `pb validate --task <id>` runs them on demand;
+`pb record --status done` re-runs them and **refuses to record** if any fail.
+
+- If checks fail: fix the work, or record `--status blocked` with notes on what's needed.
+- `--skip-checks` exists as an escape hatch, but the skip is stamped on the journal entry
+  and flagged in reports. Don't use it to fake green.
+- A task without checks is verified on your honor only. When you write a task, give it
+  executable checks whenever possible — exit codes, not prose.
+
+## Skills-first routing
+
+1. `pb next` tells you which `skill` a task uses.
+2. Open that skill in `skills/<id>/SKILL.md`. It points to a canonical process in `processes/`.
+3. Follow the process steps. Only improvise when **no** skill fits.
+4. If you had to improvise something reusable, **write a new skill + process** and add them to
+   `skills/index.yaml` and `processes/index.yaml`. That is how the playbook learns.
+
+## Guardrails (lightweight)
+
+- `pb validate` must stay green. It checks that the master, indices, and every referenced file
+  exist and parse; that skills point to real processes; that backlog statuses, dependencies,
+  and journal JSON are well-formed.
+- Record every iteration with `pb record` — no silent work. Never hand-edit `memory/journal.ndjson`.
+- One task `in_progress` at a time. Stay inside this folder.
+
+## Agent-first, human-second
+
+You work against machine records:
+- **Backlog** (`memory/backlog.yaml`) — what to do.
+- **Journal** (`memory/journal.ndjson`) — what happened (append-only, via `pb record`).
+
+Humans read the rollups you generate with `pb report` in `artifacts/reports/`. The journal is the
+source; the report is the artifact. Keep doing the work in the loop and the reports take care of themselves.
+
+## Adding to the playbook
+
+- **New task** → add an item to `memory/backlog.yaml`, with executable `acceptance_checks`.
+- **New repeatable workflow** → add `processes/<id>.yaml` + register in `processes/index.yaml`,
+  then `skills/<id>/SKILL.md` + register in `skills/index.yaml`.
+- **New durable fact** → add a numbered rule to `memory/project-memory.md`.
+- Run `pb validate` after any change.

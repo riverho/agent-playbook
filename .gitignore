@@ -1,0 +1,18 @@
+node_modules/
+*.log
+.DS_Store
+.agent-playbook/
+
+# Local-only files
+2026-06-10-234302-local-command-caveatcaveat-the-messages-below.txt
+2026-06-10-235329-local-command-caveatcaveat-the-messages-below.txt
+AGENTS.md
+CLAUDE.md
+
+# Code deliberately cut from the engine (old spec/workmap layer). Safe to delete.
+attic/
+
+# Generated human-facing reports are artifacts, not source.
+# Keep the folder, ignore the rollups. Comment this out if you want reports versioned.
+artifacts/reports/*.md
+!artifacts/reports/.gitkeep

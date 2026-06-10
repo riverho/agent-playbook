@@ -1,0 +1,2 @@
+{"ts":"2026-06-09T17:04:08.250Z","task":"workmap-lifecycle","agent":"agent","action":"implement","status":"done","result":null,"files":["scripts/pb.mjs","processes/shape-work.yaml","skills/shape-work/SKILL.md"],"notes":"Added spec/workmap/assemble/debt lifecycle with scored DAG scheduling and debt ledger guardrails."}
+{"ts":"2026-06-10T15:13:43.121Z","task":"T1","agent":"agent","action":"execute","status":"done","checks":"passed","result":null,"files":[],"notes":"Smoke-tested v0.2 engine: claim, enforced checks (refusal path verified), record, report"}

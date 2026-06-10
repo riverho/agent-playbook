@@ -1,0 +1,66 @@
+# processes/install.yaml
+# How to APPLY this playbook to a target repo. The mechanical copy is `pb
+# scaffold`; the judgment (bridging to an existing repo, wiring config) is here.
+name: install
+version: 1.0.0
+purpose: >-
+  Apply the Agent-Playbook to a target repository so any agent can run the loop,
+  bridging to the repo's existing conventions instead of overwriting them.
+
+source_of_truth:
+  engine_root: .                         # the playbook that owns scripts/pb.mjs
+  scaffold_command: node scripts/pb.mjs scaffold --target <target>
+
+applies_to:
+  - greenfield repo (no agent layer yet)
+  - existing repo that already has processes/skills/memory (bridge, don't clobber)
+
+required_inputs:
+  - target repo path (default: the current working directory)
+
+canonical_steps:
+  - step: 1
+    name: Scaffold
+    requirements:
+      - Run `node <engine>/scripts/pb.mjs scaffold --target <target>` (copy-don't-clobber).
+      - Read its report — note what it CREATED vs SKIPPED (skipped = bridge by hand).
+  - step: 2
+    name: Bridge (existing repos only)
+    requirements:
+      - If the target already had processes/ or skills/ indexes, do NOT use the templates.
+      - Edit the target playbook.yaml `index` to point at the existing index files
+        (JSON or YAML) and the existing durable memory file (e.g. a root PROJECT-MEMORY.md).
+      - Set `index.memory.project_memory` to wherever durable memory already lives.
+      - Register a generic `run-task` process+skill in the existing indexes if missing.
+      - Ensure every path in `paths` exists in the target.
+  - step: 3
+    name: Wire config
+    requirements:
+      - Add `js-yaml` to the target package.json dependencies.
+      - Add pb scripts (namespaced, e.g. pb / pb:status / pb:validate / pb:report) so they
+        do not collide with existing scripts. Run `npm install`.
+      - Append a generated-reports ignore to .gitignore (keep .gitkeep).
+      - Add a short "Playbook Loop Layer" pointer to CLAUDE.md and/or AGENTS.md.
+  - step: 4
+    name: Bootstrap
+    requirements:
+      - If the target has structure but no usable processes/skills, run `node scripts/pb.mjs bootstrap`.
+      - Bootstrap is safe and copy-don't-clobber; it creates only missing minimal run-task files.
+  - step: 5
+    name: Hydrate
+    requirements:
+      - Run `node scripts/pb.mjs init` in the target to create any missing runtime files.
+      - Init creates runtime files only; it does not create processes or skills.
+      - Seed memory/backlog.yaml with a few real, safe starter tasks for that repo.
+  - step: 6
+    name: Verify
+    requirements:
+      - Run `node scripts/pb.mjs validate` in the target — it MUST pass.
+      - Optionally run one full loop (next --claim -> record -> report -> validate), then
+        reset to a pristine state so the human can test from a clean slate.
+
+acceptance_checks:
+  - `node scripts/pb.mjs validate` passes in the target repo.
+  - playbook.yaml points at the repo's real indexes and memory (no dangling references).
+  - Existing processes/skills/memory were bridged, not overwritten.
+  - package.json has js-yaml + pb scripts; `npm install` succeeded.

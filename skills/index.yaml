@@ -1,0 +1,22 @@
+# skills/index.yaml — the skill index. `pb list skills` reads this.
+# Each skill is a short "how to" that routes to a canonical process.
+# The top-level SKILL.md (one level up) is the meta-skill that routes to these.
+name: repo-skills
+version: 1.1.0
+description: Repo-local skills. Skills-first — find the matching skill before improvising.
+
+skills:
+  - id: run-task
+    file: skills/run-task/SKILL.md
+    process: run-task
+    summary: Generic task execution — the default for any backlog item.
+
+  - id: install
+    file: skills/install/SKILL.md
+    process: install
+    summary: Apply / install the playbook into a repo (summoned by /agent-playbook).
+
+  - id: harden
+    file: skills/harden/SKILL.md
+    process: harden
+    summary: Survive context loss — re-anchor + drift detection + auto re-injection.
