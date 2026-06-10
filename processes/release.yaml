@@ -1,0 +1,69 @@
+# processes/release.yaml
+# How to cut a versioned release: bump → commit → tag → push → publish.
+name: release
+version: 1.0.0
+purpose: >-
+  Define the canonical, repeatable way to cut a semantic version release —
+  from version bump in package.json to a published GitHub release.
+
+source_of_truth:
+  master: playbook.yaml
+  memory: memory/project-memory.md
+
+applies_to:
+  - any task in memory/backlog.yaml with skill: release
+  - ad-hoc release requests (bug fix, new feature, breaking change)
+
+required_inputs:
+  - bump type: patch | minor | major
+  - release notes: a short description of what changed
+
+versioning_rules:
+  - patch: bug fixes only — no new features, no breaking changes (v0.1.0 → v0.1.1)
+  - minor: new backward-compatible features (v0.1.0 → v0.2.0)
+  - major: breaking changes (v0.x.0 → v1.0.0)
+
+canonical_steps:
+  - step: 1
+    name: Orient
+    requirements:
+      - Run `pb status` — confirm guardrails green and no task in_progress.
+      - Run `git status` — working tree must be clean before releasing.
+      - Check current version: `node -e "console.log(require('./package.json').version)"`.
+      - Determine bump type (patch / minor / major) from the changes being released.
+
+  - step: 2
+    name: Bump version
+    requirements:
+      - Edit `package.json` — increment the `version` field following semver.
+      - Commit: `git commit -m "chore: bump version to X.Y.Z"`.
+
+  - step: 3
+    name: Validate
+    requirements:
+      - Run `pb validate` — must stay green.
+      - Run `node scripts/pb.mjs status` — engine must load cleanly.
+
+  - step: 4
+    name: Tag
+    requirements:
+      - Create an annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z — <short description>"`.
+      - Push branch and tag together: `git push origin main && git push origin vX.Y.Z`.
+
+  - step: 5
+    name: Publish GitHub release
+    requirements:
+      - Run `gh release create vX.Y.Z --title "vX.Y.Z" --notes "<release notes>"`.
+      - Confirm the release appears at https://github.com/<owner>/<repo>/releases.
+
+  - step: 6
+    name: Record
+    requirements:
+      - If this was a backlog task, run `pb record --task <id> --action release --status done --notes "released vX.Y.Z"`.
+      - Run `pb report` to refresh the human artifact.
+
+acceptance_checks:
+  - "`git tag | grep -q vX.Y.Z` — tag exists locally"
+  - "`git ls-remote --tags origin vX.Y.Z | grep -q vX.Y.Z` — tag pushed to remote"
+  - "`node -e \"const v=require('./package.json').version; process.exit(v===process.argv[1]?0:1)\" X.Y.Z` — package.json version matches"
+  - "`pb validate` passes"

@@ -20,3 +20,8 @@ skills:
     file: skills/harden/SKILL.md
     process: harden
     summary: Survive context loss — re-anchor + drift detection + auto re-injection.
+
+  - id: release
+    file: skills/release/SKILL.md
+    process: release
+    summary: Cut a versioned release — bump, tag, push, publish GitHub release.
