@@ -1,0 +1,42 @@
+{
+  "name": "agent-playbook",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "A portable, agent-first playbook engine: a master playbook.yaml that indexes skills + processes, a friction-free loop CLI with enforced executable acceptance checks, and agent records that roll up into human reports. Everything lives in the folder (carry-on).",
+  "keywords": [
+    "agent",
+    "playbook",
+    "skills",
+    "loop",
+    "automation"
+  ],
+  "license": "MIT",
+  "bin": {
+    "pb": "scripts/pb.mjs"
+  },
+  "scripts": {
+    "status": "node scripts/pb.mjs status",
+    "next": "node scripts/pb.mjs next",
+    "validate": "node scripts/pb.mjs validate",
+    "report": "node scripts/pb.mjs report",
+    "list": "node scripts/pb.mjs list",
+    "init": "node scripts/pb.mjs init"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "files": [
+    "playbook.yaml",
+    "SKILL.md",
+    "AGENTS.md",
+    "README.md",
+    "scripts/",
+    "processes/",
+    "skills/",
+    "memory/",
+    "artifacts/"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
