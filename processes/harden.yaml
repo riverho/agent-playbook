@@ -39,7 +39,8 @@ canonical_steps:
   - step: 3
     name: Auto-inject per runtime
     requirements:
-      - "Claude Code: add settings.json hooks — SessionStart and UserPromptSubmit -> `pb anchor [--brief]`; PreCompact -> `pb checkpoint --snapshot`."
+      - "Claude Code: agents must not write `.claude/settings.json` themselves. Pipe-test the hook commands, then hand the exact hook JSON to the human to paste in; the classifier blocks agent self-modification."
+      - "Claude Code hook shape: SessionStart and UserPromptSubmit -> `pb anchor [--brief]`; PreCompact -> `pb checkpoint --snapshot`."
       - "Other runtimes (OpenClaw / Hermes / ...): wrap each turn (or a periodic tick) with `pb anchor --brief`; on resume run `pb checkpoint`."
       - Keep the injected anchor tiny (use --brief) so the token cost per turn is negligible.
   - step: 4
@@ -50,5 +51,5 @@ canonical_steps:
 
 acceptance_checks:
   - "`pb anchor` and `pb checkpoint` print the constitution + live state without crashing (even on a malformed master)."
-  - The runtime auto-injects the anchor (hook installed) OR the loop mandates manual re-anchor every iteration.
+  - The runtime auto-injects the anchor (hook installed by a human where required) OR the loop mandates manual re-anchor every iteration.
   - After a simulated context loss, `pb status` + memory/RESUME.md fully rehydrate the agent.

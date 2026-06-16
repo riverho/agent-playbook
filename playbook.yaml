@@ -23,6 +23,13 @@ description: >-
 # Read this FIRST, every session. It teaches any agent how to operate the playbook.
 entry: SKILL.md
 
+# north_star — the ONE invariant this project drives toward. `pb anchor` re-injects it
+# every turn, alongside the fixation. Phase-level goals live in memory/cycle.md and DO
+# change; this does not. If this line changes, you are starting a different project.
+north_star: >-
+  Make "done" mean a verified exit code, not a claim — a portable loop an agent can carry
+  into any repo, that survives context loss and never declares victory unchecked.
+
 # ----------------------------------------------------------------------------
 # fixation — invariants. Never violate these. They are what keeps the loop honest.
 # ----------------------------------------------------------------------------
@@ -37,6 +44,13 @@ fixation:
   - Agent-first, human-second. Work against the machine records; roll them up into
     artifacts/reports/ for humans. Never hand-edit the journal.
   - Keep guardrails green. Run `pb validate` before and after acting.
+  - Memory precedence — on project matters this folder (north_star + memory/) outranks the
+    agent's own or host memory. Host memory is the past; the playbook is the present and
+    future. On conflict, surface it; never silently follow host memory.
+  - Open each phase with a cycle brief (memory/cycle.md, the four questions) and close it
+    with `pb reflect`. The North Star is invariant; the cycle goal changes per phase.
+  - Acceptance_checks must test the task's own artifacts — `pb validate` alone is not a task
+    check. A gate that passes without the work being done is worse than no gate.
 
 # ----------------------------------------------------------------------------
 # paths — canonical layout. The CLI resolves everything relative to this file's
@@ -63,6 +77,7 @@ index:
     project_memory: memory/project-memory.md   # durable numbered operating rules
     backlog: memory/backlog.yaml               # the task queue the loop pulls from
     journal: memory/journal.ndjson             # append-only machine record (agent-first)
+    cycle: memory/cycle.md                     # the current phase brief (forward half of the loop)
   artifacts:
     reports: artifacts/reports                 # human-facing rollups (generated)
 
@@ -119,12 +134,12 @@ hardening:
     checkpoint: node scripts/pb.mjs checkpoint   # heartbeat + drift detection
   re_anchor: Call anchor at the start of every iteration and after every few actions.
   auto_inject:
-    # Wire the runtime to call these so the agent never has to remember.
     claude_code:
+      note: Agents hand hook JSON to the human; do not write .claude/settings.json themselves.
       SessionStart: node scripts/pb.mjs anchor
       UserPromptSubmit: node scripts/pb.mjs anchor --brief
       PreCompact: node scripts/pb.mjs checkpoint --snapshot
-    other_runtimes: Wrap each turn (or a periodic tick) with `node scripts/pb.mjs anchor --brief`; on resume run checkpoint.
+    other_runtimes: Wrap each turn with `node scripts/pb.mjs anchor --brief`; on resume run checkpoint.
 
 # ----------------------------------------------------------------------------
 # reporting — how agent-first records become human artifacts.
@@ -136,5 +151,5 @@ reporting:
   filename: report-<date>.md
   contains:
     - Summary counts (done / in_progress / blocked / todo).
-    - Per-task timeline built from journal entries (with check outcomes).
-    - Open backlog with priority, skill, and check count per task.
+    - Per-task timeline built from journal entries, including skipped and hollow-check markers.
+    - Open backlog with priority, skill, and gate quality.

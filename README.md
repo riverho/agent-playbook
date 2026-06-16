@@ -1,5 +1,10 @@
 # Agent-Playbook
 
+> **Done is an exit code, not prose.** The kernel is a `pb record --status done` that re-runs each
+> task's `acceptance_checks` (shell commands) and *refuses* on failure. Anchoring, the North Star
+> (`north_star`), the cycle brief, and carry-on portability all *support* that verification gate —
+> they do not replace it. If a check is tautological, the gate is hollow; see `scripts/check-hollow.mjs`.
+
 A **portable, agent-first playbook**. Drop it into any folder and an agent can run it in a loop
 without friction: orient on a master file, pick a task, do the work, prove it with **executable
 acceptance checks**, record, and roll the records up into a human-readable report. Everything

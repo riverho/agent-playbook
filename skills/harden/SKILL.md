@@ -28,3 +28,11 @@ You cannot win by keeping everything in context. Survive by:
 - Keep the injected anchor **tiny** (`--brief`) — negligible tokens, maximum recency.
 - The anchor is generated from `playbook.yaml`, so it never drifts from the master.
 - `anchor`/`checkpoint` must never crash a session — they tolerate a malformed master.
+
+
+## Limitation: agents cannot self-install hooks under Claude Code
+
+Claude Code's auto-mode **classifier** blocks an agent from writing its own `.claude/settings.json`
+(self-modification). The harden step therefore cannot complete autonomously: pipe-test the hook
+commands, then **hand the exact hook JSON to the human** to paste in — never attempt the write from
+the agent. (Observed live during the 2026-06-11 summon-forge install.)

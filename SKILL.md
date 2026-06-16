@@ -76,3 +76,21 @@ source; the report is the artifact. Keep doing the work in the loop and the repo
   then `skills/<id>/SKILL.md` + register in `skills/index.yaml`.
 - **New durable fact** → add a numbered rule to `memory/project-memory.md`.
 - Run `pb validate` after any change.
+
+
+## The phase loop (cycle → reflect)
+
+The task loop above runs *inside* a larger phase loop. The **North Star** (`north_star` in
+`playbook.yaml`) is the invariant goal, re-injected every turn by `pb anchor`. Each phase also has a
+changing **cycle goal**:
+
+- **Open a phase:** `pb cycle --new` writes `memory/cycle.md` — five questions (goal, foreseen and
+  prior challenges, stop condition, and any conflict with your own memory). `pb anchor` re-injects the
+  goal and stop condition every turn.
+- **Close a phase:** `pb reflect` reviews what was recorded `done` since the last reflection against
+  the North Star and records it. `pb checkpoint` warns on a missing/stale brief or on N tasks done
+  without a `pb reflect`.
+
+**Memory precedence:** on project matters this folder (`north_star` + `memory/`) outranks your own or
+host memory. Host memory is the past; the playbook is the present and future. On conflict, surface it
+— never silently follow host memory.

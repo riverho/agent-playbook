@@ -71,6 +71,8 @@ const REPORTS_DIR = mPaths.reports || (mIndex.artifacts && mIndex.artifacts.repo
 const MEMORY_DIR = dirname(BACKLOG) || 'memory';
 const ENTRY = master.entry || 'SKILL.md';
 const ALLOWED_STATUSES = (master.guardrails && master.guardrails.allowed_statuses) || ['todo', 'in_progress', 'blocked', 'done'];
+const NORTH_STAR = (typeof master.north_star === 'string' && master.north_star.trim()) ? master.north_star.trim().replace(/\s+/g, ' ') : null;
+const CYCLE = mMem.cycle || 'memory/cycle.md';
 
 // --- structured helpers ----------------------------------------------------
 function readJournal() {
@@ -145,6 +147,19 @@ function unmetDeps(task, tasks) {
 function taskChecks(task) {
   return (Array.isArray(task?.acceptance_checks) ? task.acceptance_checks : [])
     .filter((c) => typeof c === 'string' && c.trim());
+}
+
+function gateQuality(task) {
+  const checks = taskChecks(task);
+  if (!checks.length) return '·honor';
+  const structuralOnly = (c) => /(^|\s)(node\s+scripts\/pb\.mjs|pb(\.mjs)?|npm\s+run)\s+validate\b/.test(c.trim()) && !/--task/.test(c);
+  return checks.every(structuralOnly) ? '⚠hollow' : '✓verified';
+}
+function reportCheckMarker(entry, task) {
+  if (entry.checks === 'skipped') return ' ⚠checks-skipped';
+  if (entry.checks !== 'passed') return '';
+  const quality = task ? gateQuality(task) : '✓verified';
+  return quality === '⚠hollow' ? ' ⚠hollow-checks' : ' ✓verified';
 }
 function runChecks(task) {
   const checks = taskChecks(task);
@@ -442,6 +457,7 @@ function cmdReport(args) {
     byTask.get(e.task).push(e);
   }
   const titleOf = (id) => tasks.find((t) => t.id === id)?.title || '';
+  const taskById = new Map(tasks.map((t) => [t.id, t]));
 
   const lines = [];
   lines.push(`# ${master?.name || 'Playbook'} Report — ${today()}`);
@@ -467,7 +483,7 @@ function cmdReport(args) {
       for (const e of entries) {
         const files = e.files?.length ? ` _(files: ${e.files.join(', ')})_` : '';
         const notes = e.notes ? ` — ${e.notes}` : '';
-        const checks = e.checks === 'passed' ? ' ✓checks' : e.checks === 'skipped' ? ' ⚠checks-skipped' : '';
+        const checks = reportCheckMarker(e, taskById.get(e.task));
         lines.push(`- \`${e.ts?.slice(0, 19)}\` **${e.action}** → ${e.status}${checks}${notes}${files}`);
       }
       lines.push('');
@@ -480,9 +496,9 @@ function cmdReport(args) {
   if (open.length === 0) {
     lines.push('_Backlog clear._');
   } else {
-    lines.push('| Priority | ID | Status | Task | Skill | Checks |');
+    lines.push('| Priority | ID | Status | Task | Skill | Gate |');
     lines.push('| --- | --- | --- | --- | --- | --- |');
-    for (const t of open) lines.push(`| ${prio(t)} | ${t.id} | ${t.status} | ${t.title} | ${t.skill || '-'} | ${taskChecks(t).length || '-'} |`);
+    for (const t of open) lines.push(`| ${prio(t)} | ${t.id} | ${t.status} | ${t.title} | ${t.skill || '-'} | ${gateQuality(t)} |`);
   }
   lines.push('');
 
@@ -667,21 +683,42 @@ Steps:
 function cmdAnchor(args) {
   const name = master.name || 'playbook';
   const loopDesc = master.loop?.description || 'orient → select → act → verify → record → report';
+  const cur = readCycle();
+  const purpose = NORTH_STAR ? `North Star (invariant): ${NORTH_STAR}` : 'North Star: (unset — add `north_star:` to the master)';
+  const cycleLine = cur.exists
+    ? `This cycle (phase ${cur.phase ?? '?'}): ${cur.goal || '(goal unset)'}  ·  Stop: ${cur.stop || '(unset)'}`
+    : 'This cycle: (no brief — run `pb cycle --new`)';
+  const memRule = 'Memory precedence: your own/host memory is the PAST; this folder is the project PRESENT/FUTURE. On any project conflict the folder wins — surface it, do not silently follow host memory.';
+
   if (args.brief) {
     console.log(`[${name} anchor] master=${MASTER} · loop: ${loopDesc}`);
-    console.log(`Re-anchor to ${MASTER} each iteration. State is on disk (${BACKLOG}, ${JOURNAL}) — rehydrate with \`node scripts/pb.mjs status\`. Record every step with \`pb record\`; never hand-edit the journal.`);
+    console.log(purpose);
+    console.log(cycleLine);
+    console.log(`Re-anchor to ${MASTER} each iteration. State is on disk (${BACKLOG}, ${JOURNAL}) — rehydrate with \`node scripts/pb.mjs status\`. ${memRule}`);
     return;
   }
   console.log(`\n=== PLAYBOOK ANCHOR — ${name} ===`);
   console.log(`Master (the fixation): ${MASTER}   |   Entry: ${ENTRY}`);
+  console.log(purpose);
+  console.log(cycleLine);
   console.log(`Loop: ${loopDesc}`);
   const fix = master.fixation || [];
   if (fix.length) {
     console.log('Invariants (never violate):');
     for (const r of fix) console.log(`  - ${r}`);
   }
+  console.log(memRule);
+  const _wip = backlogTasks().find((t) => t.status === 'in_progress');
+  if (_wip) {
+    console.log(`Claimed task: [${_wip.id}] ${_wip.title || ''}`);
+    const _ch = taskChecks(_wip);
+    if (_ch.length) {
+      console.log('  done means (its acceptance_checks):');
+      for (const c of _ch) console.log(`    $ ${c}`);
+    }
+  }
   console.log(`State lives on disk, not in context. Rehydrate anytime: \`node scripts/pb.mjs status\`.`);
-  console.log(`  backlog: ${BACKLOG}   journal: ${JOURNAL}   reports: ${REPORTS_DIR}`);
+  console.log(`  backlog: ${BACKLOG}   journal: ${JOURNAL}   reports: ${REPORTS_DIR}   cycle: ${CYCLE}`);
   console.log(`If you feel lost or just resumed: \`node scripts/pb.mjs checkpoint\`.`);
   console.log(`=== END ANCHOR ===\n`);
 }
@@ -708,6 +745,15 @@ function cmdCheckpoint(args) {
     const recorded = journal.some((e) => e.task === t.id && (!t.claimed_at || (e.ts || '') >= t.claimed_at));
     if (!recorded) warnings.push(`[${t.id}] claimed but no progress recorded — \`pb record --task ${t.id} ...\` or release it.`);
   }
+  // phase-loop drift: forward brief (cycle) + backward reflect
+  const cyc = readCycle();
+  const reflectTs = lastReflectTs(journal);
+  const hasClaimableWork = wip.length > 0 || Boolean(nextTodo);
+  if (hasClaimableWork && cyc.exists && readText(CYCLE).includes('(Your host memory is the PAST')) warnings.push('Cycle brief Q5 (memory-conflict check) is unanswered — fill it before claiming work.');
+  if (hasClaimableWork && !cyc.exists) warnings.push('No cycle brief — open the phase with `pb cycle --new` before claiming work.');
+  else if (hasClaimableWork && reflectTs && cyc.started && reflectTs > cyc.started) warnings.push('Cycle brief is stale — the last `pb reflect` closed the phase; open a new one with `pb cycle --new --force`.');
+  const doneSinceReflect = journal.filter((e) => e.status === 'done' && e.action !== 'reflect' && (!reflectTs || (e.ts || '') > reflectTs)).length;
+  if (doneSinceReflect > 0) warnings.push(`${doneSinceReflect} task(s) recorded done since the last reflect — run \`pb reflect\`.`);
 
   console.log(`State: ${tasks.filter((t) => t.status === 'todo').length} todo · ${wip.length} in_progress · ${tasks.filter((t) => t.status === 'done').length} done · last journal: ${lastTs ? lastTs.slice(0, 19) : 'none'}`);
   if (warnings.length) {
@@ -738,6 +784,110 @@ function cmdCheckpoint(args) {
     writeFileSync(p(join(MEMORY_DIR, 'RESUME.md')), resume.join('\n'), 'utf8');
     console.log(`Snapshot written: ${join(MEMORY_DIR, 'RESUME.md')}`);
   }
+}
+
+// ============================================================================
+//  cycle — the FORWARD half of the phase loop. A "cycle brief" is the four
+//  questions confirmed at the start of each phase. The North Star is invariant;
+//  the cycle goal changes per phase. Brief opens the phase; `reflect` closes it.
+// ============================================================================
+function readCycle() {
+  const text = readText(CYCLE);
+  if (!text) return { exists: false };
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  let meta = {};
+  if (m) { try { meta = yaml.load(m[1]) || {}; } catch { meta = {}; } }
+  if (meta && meta.started instanceof Date) meta.started = meta.started.toISOString();
+  return { exists: true, ...meta };
+}
+function cycleTemplate({ phase, goal, stop }) {
+  return `---
+phase: ${phase}
+started: "${nowISO()}"
+goal: ${goal ? JSON.stringify(goal) : '""'}
+stop: ${stop ? JSON.stringify(stop) : '""'}
+---
+# Cycle Brief — phase ${phase}
+
+> Confirm this at the START of each phase, before claiming work. The North Star does
+> not change; this cycle's goal does. Fill all five, then \`node scripts/pb.mjs status\`.
+
+## 1. What is this cycle's goal?
+${goal || '(one sentence — the phase goal, distinct from the North Star)'}
+
+## 2. What challenges do I foresee?
+(pre-mortem: what is most likely to go wrong this phase)
+
+## 3. What were the previous challenges?
+(carry-over — seed from the last \`pb reflect\`)
+
+## 4. Where do I stop / hand back?
+${stop || '(the explicit stop condition — what "this phase is done" means, and the hand-back point)'}
+
+## 5. Conflicts with my own (agent) memory?
+(Your host memory is the PAST; this folder is the project's PRESENT/FUTURE. If anything you
+"remember" about this project contradicts the North Star or this goal, NAME it here and treat
+the folder as truth — do not silently follow memory.)
+`;
+}
+function cmdCycle(args) {
+  const cur = readCycle();
+  if (args.new) {
+    if (cur.exists && !args.force) {
+      console.log(`A cycle brief already exists (phase ${cur.phase ?? '?'}, started ${String(cur.started).slice(0, 19)}).`);
+      console.log('Open the next phase with `pb cycle --new --force` (optionally --goal "..." --stop "...").');
+      return;
+    }
+    const phase = (Number.isInteger(cur.phase) ? cur.phase : 0) + 1;
+    ensureDir(dirname(CYCLE));
+    writeFileSync(p(CYCLE), cycleTemplate({ phase, goal: args.goal, stop: args.stop }), 'utf8');
+    console.log(`Opened cycle brief: ${CYCLE} (phase ${phase}). Fill the five questions, then \`pb status\`.`);
+    return;
+  }
+  if (!cur.exists) {
+    console.log('No cycle brief yet. Open one with `pb cycle --new` (the forward half of the phase loop).');
+    return;
+  }
+  console.log(`\n  Cycle brief — phase ${cur.phase ?? '?'}  (started ${String(cur.started).slice(0, 19)})`);
+  if (NORTH_STAR) console.log(`  North Star: ${NORTH_STAR}`);
+  console.log(`  Goal: ${cur.goal || '(unset)'}`);
+  console.log(`  Stop: ${cur.stop || '(unset)'}`);
+  console.log(`  Full brief: ${CYCLE}\n`);
+}
+
+function lastReflectTs(journal) {
+  const r = journal.filter((e) => e.action === 'reflect');
+  return r.length ? r[r.length - 1].ts : null;
+}
+function cmdReflect(args) {
+  const journal = readJournal().filter((e) => !e.__malformed);
+  const since = lastReflectTs(journal);
+  const doneSince = journal.filter((e) => e.status === 'done' && e.action !== 'reflect' && (!since || (e.ts || '') > since));
+  const cur = readCycle();
+
+  console.log('\n=== REFLECT ===');
+  if (NORTH_STAR) console.log(`North Star: ${NORTH_STAR}`);
+  if (cur.exists) console.log(`This cycle (phase ${cur.phase ?? '?'}): ${cur.goal || '(unset)'}`);
+  console.log(since ? `Done since last reflect (${since.slice(0, 19)}):` : 'Done so far:');
+  if (doneSince.length) {
+    for (const e of doneSince) console.log(`  - [${e.task || '-'}] ${e.notes || e.action}`);
+  } else {
+    console.log('  (nothing)');
+  }
+  console.log('\nAsk: did these advance the North Star + cycle goal? What changes? What carries into the next phase?');
+
+  if (args.notes) {
+    const entry = {
+      ts: nowISO(), task: 'reflect', agent: args.agent || 'agent', action: 'reflect',
+      status: 'done', checks: 'none', result: null, files: [], notes: args.notes,
+    };
+    ensureDir(MEMORY_DIR);
+    appendFileSync(p(JOURNAL), JSON.stringify(entry) + '\n', 'utf8');
+    console.log(`\nRecorded reflection. If it changes direction, update north_star in ${MASTER} and open a new brief: \`pb cycle --new --force\`.`);
+  } else {
+    console.log('\nRecord it with: pb reflect --notes "what you learned / what changes / what carries forward".');
+  }
+  console.log('=== END REFLECT ===\n');
 }
 
 // ============================================================================
@@ -814,6 +964,8 @@ function cmdHelp() {
                            Append a journal entry. Recording done RUNS the task's
                            acceptance_checks and refuses if they fail.
     report [--since DATE]  Roll the journal up into ${REPORTS_DIR}/report-<date>.md
+    cycle [--new [--force] --goal ".." --stop ".."]  Forward half of the phase loop: the cycle brief (4+1 Qs). No args prints it.
+    reflect [--notes ".."] Backward half: review done-since-last-reflect vs North Star; --notes records it
     validate               Structural guardrails (exit 1 on failure)
     validate --task <id>   Run that task's executable acceptance_checks
     anchor [--brief]       Print the constitution to re-inject (keeps the playbook salient)
@@ -840,6 +992,8 @@ switch (cmd) {
   case 'validate': cmdValidate(args); break;
   case 'anchor': cmdAnchor(args); break;
   case 'checkpoint': cmdCheckpoint(args); break;
+  case 'cycle': cmdCycle(args); break;
+  case 'reflect': cmdReflect(args); break;
   case 'list': cmdList(args); break;
   case 'scaffold': cmdScaffold(args); break;
   case 'init': cmdInit(); break;

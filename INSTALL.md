@@ -120,3 +120,8 @@ node .agent-playbook/scripts/pb.mjs status
 ```
 
 The canonical source of truth after install is `.agent-playbook/playbook.yaml`.
+
+## Hardening note (Claude Code)
+
+Agents cannot self-install the hooks: Claude Code's auto-mode **classifier** blocks writes to
+`.claude/settings.json`. Hand the hook JSON to the human to paste in; do not attempt the write.
