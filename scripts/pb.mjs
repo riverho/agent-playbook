@@ -286,6 +286,20 @@ function cmdValidate(args) {
     process.exit(1);
   }
   console.log('Playbook validation passed.');
+
+  // Hollow-check pass: warn (or fail with --strict) when actionable tasks rely only on
+  // structural checks. The structural gate (pb validate) proves the playbook is well-formed,
+  // not that the task's work was done — making "done" a false green.
+  const allTasks = backlogTasks();
+  const hollowActionable = allTasks.filter(
+    (t) => ['todo', 'in_progress'].includes(t.status) && gateQuality(t) === '⚠hollow'
+  );
+  if (hollowActionable.length) {
+    console.log(`\n⚠ Hollow gate warning: ${hollowActionable.length} actionable task(s) use only structural checks (pb validate):`);
+    for (const t of hollowActionable) console.log(`  ⚠hollow  [${t.id}] ${t.title || ''}`);
+    console.log('Add task-specific acceptance_checks that test the work itself. Run \`node scripts/check-hollow.mjs .\` for details.');
+    if (args.strict) { console.error('\nFailing (--strict): hollow gates on actionable tasks.'); process.exit(1); }
+  }
 }
 
 // ============================================================================
@@ -563,6 +577,10 @@ function cmdBootstrap() {
 version: 0.2.0
 description: Repo-local agent playbook.
 entry: SKILL.md
+
+north_star: >-
+  (one invariant sentence — what this project drives toward; fill this before claiming work)
+
 paths:
   root: .
   scripts: scripts
@@ -571,6 +589,7 @@ paths:
   memory: memory
   artifacts: artifacts
   reports: artifacts/reports
+
 index:
   cli: scripts/pb.mjs
   processes_index: processes/index.yaml
@@ -579,25 +598,57 @@ index:
     project_memory: memory/project-memory.md
     backlog: memory/backlog.yaml
     journal: memory/journal.ndjson
+    cycle: memory/cycle.md
   artifacts:
     reports: artifacts/reports
+
 loop:
   description: Orient -> Select -> Act -> Verify -> Record -> Report -> repeat.
+
+fixation:
+  - Re-anchor to playbook.yaml at the start of every loop iteration. The master wins.
+  - Act only inside this folder. The playbook is self-contained (carry-on).
+  - Skills-first. Find the matching skill before improvising. If none fits, write one.
+  - Done means the task's acceptance_checks (shell commands) exit 0. Record only on pass.
+  - Record every iteration to memory/journal.ndjson via pb record. No silent work.
+  - A task's acceptance_checks must test the task's own artifacts — pb validate alone is not a task check.
+  - Memory precedence: folder (north_star + memory/) outranks agent/host memory on project matters.
+
 guardrails:
   validate_command: node scripts/pb.mjs validate
   allowed_statuses: [todo, in_progress, blocked, done]
+
+hardening:
+  principle: Externalize state to disk + re-anchor cheaply + auto-re-inject the anchor.
+  commands:
+    anchor: node scripts/pb.mjs anchor
+    checkpoint: node scripts/pb.mjs checkpoint
+  re_anchor: Call anchor at the start of every iteration and after every few actions.
 `, created);
 
   writeIfMissing('SKILL.md', `# Playbook Skill
 
-Read \`playbook.yaml\`, then run \`node scripts/pb.mjs status\`.
+## Startup (every session)
+1. Read \`playbook.yaml\` — the master (north_star, fixation, loop contract).
+2. Read \`memory/project-memory.md\` — durable operating rules.
+3. Run \`node scripts/pb.mjs status\` — orient on backlog + journal + guardrails.
 
-Loop: orient -> select -> act -> verify -> record -> report.
+## The loop
+orient → select → act → verify → record → report
 
-Use \`node scripts/pb.mjs next --claim\` to claim work. Follow the named skill in
-\`skills/<id>/SKILL.md\`. "Done" is enforced: \`node scripts/pb.mjs record --status done\`
-runs the task's acceptance_checks (shell commands) and refuses if they fail.
-Roll up with \`node scripts/pb.mjs report\`.
+- Select: \`node scripts/pb.mjs next --claim\` — prints the task and its acceptance_checks.
+- "Done" is enforced: \`pb record --status done\` runs the task's acceptance_checks (shell commands)
+  and refuses if they fail. Exit codes, not prose.
+- Roll up: \`node scripts/pb.mjs report\`.
+
+## Phase loop (open each phase, close it)
+- Open: \`node scripts/pb.mjs cycle --new\` — confirm the cycle brief (goal / challenges / stop).
+- Close: \`node scripts/pb.mjs reflect\` — compare done tasks to the north_star; record notes.
+- \`pb checkpoint\` warns when work is claimed without a brief, or done tasks await reflection.
+
+## Memory precedence
+Your host memory is the PAST; this folder is the project PRESENT/FUTURE. On any project conflict,
+the folder wins — surface the conflict, do not silently follow host memory.
 `, created);
 
   writeIfMissing(PROJECT_MEMORY, `# Project Memory
