@@ -94,3 +94,17 @@ changing **cycle goal**:
 **Memory precedence:** on project matters this folder (`north_star` + `memory/`) outranks your own or
 host memory. Host memory is the past; the playbook is the present and future. On conflict, surface it
 — never silently follow host memory.
+
+## Loop epochs and learning
+
+For scoped work, open a durable epoch with `node scripts/pb.mjs loop new --goal "..." --stop "..."`.
+New records are stamped with the active `loop_id`; long-running commands should use
+`node scripts/pb.mjs run -- <command>` so logs and PIDs are tied to that loop.
+
+- Clean close: `node scripts/pb.mjs loop close --status done`.
+- Contaminated close: `node scripts/pb.mjs loop close --status failed --reason "..."`.
+- Smarter next loop: after a failed loop, record user/agent reflection with
+  `node scripts/pb.mjs learn --loop <id> --source user --notes "..."` before opening the next loop.
+
+Promote reusable lessons into `memory/project-memory.md`, backlog tasks with acceptance checks, or
+new/updated skills and processes. Keep raw details in `memory/lessons.ndjson`.

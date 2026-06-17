@@ -31,7 +31,7 @@ complexity only when a real workload demands it.
 playbook.yaml      THE MASTER — indexes everything; loop contract; guardrails
 SKILL.md           How any agent operates the playbook (read first)
 AGENTS.md          Pointer for cross-tool compatibility
-scripts/pb.mjs     The loop CLI (status | next | record | report | validate | anchor | checkpoint | list | scaffold | init | bootstrap)
+scripts/pb.mjs     The loop CLI (status | next | record | report | validate | anchor | checkpoint | loop | learn | run | ps | stop | list | scaffold | init | bootstrap)
 processes/         Canonical, ordered workflows (+ index.yaml)
 skills/            Short "how-to"s that route to processes (+ index.yaml)
 memory/            project-memory.md · backlog.yaml · journal.ndjson  (durable, agent-first)
@@ -105,6 +105,16 @@ State lives on disk, never only in chat. Two commands keep the playbook in an ag
 Wire them into runtime hooks so the agent never has to remember (Claude Code example):
 `SessionStart` → `pb anchor`, `UserPromptSubmit` → `pb anchor --brief`, `PreCompact` →
 `pb checkpoint --snapshot`. See the `harden` skill.
+
+## Loop epochs and lessons
+
+Use `pb loop new` to open a durable loop epoch. New `pb record` entries are stamped with the active
+`loop_id`, and loop-scoped artifacts live under `artifacts/loops/<loop_id>/`.
+
+Close clean loops with `pb loop close --status done`. Close contaminated runs with
+`pb loop close --status failed --reason "..."`; that writes a quarantine artifact and blocks the
+next `pb loop new` until a lesson is recorded with `pb learn --loop <id> --source user --notes "..."`.
+Promote reusable lessons into project memory, backlog tasks, or skills/processes.
 
 ## Make it your own
 

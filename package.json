@@ -1,6 +1,6 @@
 {
   "name": "agent-playbook",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "A portable, agent-first playbook engine: a master playbook.yaml that indexes skills + processes, a friction-free loop CLI with enforced executable acceptance checks, and agent records that roll up into human reports. Everything lives in the folder (carry-on).",
   "keywords": [
@@ -20,7 +20,8 @@
     "validate": "node scripts/pb.mjs validate",
     "report": "node scripts/pb.mjs report",
     "list": "node scripts/pb.mjs list",
-    "init": "node scripts/pb.mjs init"
+    "init": "node scripts/pb.mjs init",
+    "test": "node scripts/test-anchor-selective.mjs && node scripts/test-hollow-validate.mjs && node scripts/test-q5.mjs && node scripts/test-report-gates.mjs && node scripts/test-loop-epochs.mjs"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"

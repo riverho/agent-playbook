@@ -4,7 +4,7 @@
 // ----------------------------------------------------------------------------
 //  One command per loop step, so agents move without friction:
 //    status | next | record | report | validate | anchor | checkpoint |
-//    list | scaffold | init | bootstrap | help
+//    loop | learn | run | ps | stop | list | scaffold | init | bootstrap | help
 //
 //  The honest core: a task is "done" when its acceptance_checks — executable
 //  shell commands on the task itself — pass. `pb record --status done` runs
@@ -23,8 +23,8 @@
 //  Only dependency: js-yaml.
 // ============================================================================
 
-import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, copyFileSync, cpSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, copyFileSync, cpSync, openSync } from 'node:fs';
+import { execSync, spawn } from 'node:child_process';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
@@ -73,6 +73,11 @@ const ENTRY = master.entry || 'SKILL.md';
 const ALLOWED_STATUSES = (master.guardrails && master.guardrails.allowed_statuses) || ['todo', 'in_progress', 'blocked', 'done'];
 const NORTH_STAR = (typeof master.north_star === 'string' && master.north_star.trim()) ? master.north_star.trim().replace(/\s+/g, ' ') : null;
 const CYCLE = mMem.cycle || 'memory/cycle.md';
+const LOOPS = mMem.loops || 'memory/loops.yaml';
+const LESSONS = mMem.lessons || 'memory/lessons.ndjson';
+const PROCESSES = mMem.processes || 'memory/processes.ndjson';
+const ARTIFACTS_DIR = mPaths.artifacts || 'artifacts';
+const LOOP_ARTIFACTS_DIR = join(ARTIFACTS_DIR, 'loops');
 
 // --- structured helpers ----------------------------------------------------
 function readJournal() {
@@ -107,12 +112,127 @@ function writeIfMissing(rel, text, created) {
     created.push(rel);
   }
 }
+function readNdjson(rel) {
+  return readText(rel)
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0)
+    .map((l, i) => {
+      try { return JSON.parse(l); }
+      catch { return { __malformed: true, __line: i + 1, raw: l }; }
+    });
+}
+function appendNdjson(rel, obj) {
+  ensureDir(dirname(rel));
+  appendFileSync(p(rel), JSON.stringify(obj) + '\n', 'utf8');
+}
+function journalLineCount() {
+  return readText(JOURNAL).split(/\r?\n/).filter((l) => l.trim().length > 0).length;
+}
+function readLoops() {
+  let data = null;
+  try { data = readData(LOOPS); }
+  catch { data = null; }
+  return {
+    active: typeof data?.active === 'string' ? data.active : null,
+    loops: Array.isArray(data?.loops) ? data.loops : [],
+  };
+}
+function writeLoops(state) {
+  ensureDir(dirname(LOOPS));
+  writeFileSync(p(LOOPS), yaml.dump({
+    active: state.active || null,
+    loops: Array.isArray(state.loops) ? state.loops : [],
+  }, { lineWidth: 100 }), 'utf8');
+}
+function activeLoop() {
+  const state = readLoops();
+  const loop = state.active ? state.loops.find((l) => l.id === state.active) : null;
+  return loop && loop.status === 'active' ? loop : null;
+}
+function latestLoop() {
+  const loops = readLoops().loops;
+  return loops.length ? loops[loops.length - 1] : null;
+}
+function loopById(id) {
+  return readLoops().loops.find((l) => l.id === id) || null;
+}
+function nextLoopId(state = readLoops()) {
+  const prefix = `loop-${today().replace(/-/g, '')}`;
+  const n = state.loops.filter((l) => String(l.id || '').startsWith(prefix)).length + 1;
+  return `${prefix}-${String(n).padStart(3, '0')}`;
+}
+function loopArtifactsRel(loopId, ...parts) {
+  return join(LOOP_ARTIFACTS_DIR, loopId, ...parts);
+}
+function readLessons() {
+  return readNdjson(LESSONS).filter((e) => !e.__malformed);
+}
+function openLessons() {
+  return readLessons().filter((l) => l.status !== 'promoted' && l.status !== 'closed');
+}
+function lessonsForLoop(loopId) {
+  return readLessons().filter((l) => l.loop_id === loopId);
+}
+function nextLessonId() {
+  const prefix = `lesson-${today().replace(/-/g, '')}`;
+  const n = readLessons().filter((l) => String(l.id || '').startsWith(prefix)).length + 1;
+  return `${prefix}-${String(n).padStart(3, '0')}`;
+}
+function readProcessEvents() {
+  return readNdjson(PROCESSES).filter((e) => !e.__malformed);
+}
+function latestProcessRecords(loopId = null) {
+  const byPid = new Map();
+  for (const e of readProcessEvents()) {
+    if (loopId && e.loop_id !== loopId) continue;
+    if (e.pid !== undefined) byPid.set(`${e.loop_id}:${e.pid}`, e);
+  }
+  return [...byPid.values()];
+}
+function pidAlive(pid) {
+  const n = Number(pid);
+  if (!Number.isInteger(n) || n <= 0) return false;
+  try {
+    process.kill(n, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
+function stopPid(pid) {
+  const n = Number(pid);
+  if (!Number.isInteger(n) || n <= 0) return false;
+  try {
+    if (process.platform === 'win32') execSync(`taskkill /PID ${n} /T /F`, { stdio: 'pipe' });
+    else process.kill(-n, 'SIGTERM');
+    return true;
+  } catch {
+    try { process.kill(n, 'SIGTERM'); return true; }
+    catch { return false; }
+  }
+}
+function stopLoopProcesses(loopId) {
+  const stopped = [];
+  for (const proc of latestProcessRecords(loopId)) {
+    const alive = proc.status !== 'stopped' && pidAlive(proc.pid);
+    if (!alive) continue;
+    const ok = stopPid(proc.pid);
+    const event = { ...proc, ts: nowISO(), status: ok ? 'stopped' : 'stop_failed', stopped_at: nowISO() };
+    appendNdjson(PROCESSES, event);
+    stopped.push(event);
+  }
+  return stopped;
+}
 
 // minimal arg parser: positionals in `_`, --key value / --flag true
 function parseArgs(argv) {
   const out = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
+    if (tok === '--') {
+      out['--'] = argv.slice(i + 1);
+      break;
+    }
     if (tok.startsWith('--')) {
       const key = tok.slice(2);
       const nxt = argv[i + 1];
@@ -250,6 +370,29 @@ function runValidate() {
   readJournal().forEach((e) => {
     if (e.__malformed) failures.push(`Malformed JSON in ${JOURNAL} line ${e.__line}`);
   });
+  if (existsSync(p(LOOPS))) {
+    try { yaml.load(readText(LOOPS)); }
+    catch (e) { failures.push(`Malformed YAML in ${LOOPS}: ${e.message}`); }
+    const loops = readLoops();
+    ok(Array.isArray(loops.loops), `${LOOPS} must contain a "loops" list`);
+    const ids = new Set();
+    for (const l of loops.loops) {
+      ok(l.id, `A loop entry in ${LOOPS} is missing an id`);
+      if (l.id) ids.add(l.id);
+      ok(['active', 'done', 'failed', 'quarantined', 'abandoned'].includes(l.status), `Loop ${l.id || '?'} has invalid status: ${l.status}`);
+    }
+    if (loops.active) ok(ids.has(loops.active), `${LOOPS} active loop does not exist: ${loops.active}`);
+  }
+  if (existsSync(p(LESSONS))) {
+    readNdjson(LESSONS).forEach((e) => {
+      if (e.__malformed) failures.push(`Malformed JSON in ${LESSONS} line ${e.__line}`);
+    });
+  }
+  if (existsSync(p(PROCESSES))) {
+    readNdjson(PROCESSES).forEach((e) => {
+      if (e.__malformed) failures.push(`Malformed JSON in ${PROCESSES} line ${e.__line}`);
+    });
+  }
 
   // 7. declared paths targets exist
   for (const [k, v] of Object.entries(mPaths)) {
@@ -315,6 +458,9 @@ function cmdStatus() {
   const counts = Object.fromEntries(ALLOWED_STATUSES.map((s) => [s, 0]));
   for (const t of tasks) if (counts[t.status] !== undefined) counts[t.status]++;
   console.log('  Backlog: ' + ALLOWED_STATUSES.map((s) => `${counts[s]} ${s}`).join('  •  '));
+  const loop = activeLoop();
+  const highLessons = openLessons().filter((l) => l.severity === 'high').length;
+  console.log(`  Loop:    ${loop ? `${loop.id} active` : '(none active)'}  •  ${highLessons} high-severity lesson(s) open`);
 
   const next = tasks.filter((t) => t.status === 'todo').sort((a, b) => prio(a) - prio(b))[0];
   if (next) console.log(`  Next up: [${next.id}] ${next.title}  → skill: ${next.skill || '(none)'}`);
@@ -379,10 +525,13 @@ function cmdNext(args) {
   }
 
   if (args.claim) {
+    const loop = activeLoop();
     candidate.status = 'in_progress';
     candidate.claimed_at = nowISO();
+    if (loop) candidate.loop_id = loop.id;
     writeBacklog(bl);
     console.log(`\n  Claimed [${candidate.id}] → in_progress.`);
+    if (loop) console.log(`  Loop: ${loop.id}`);
     console.log(`  Next: do the work via the skill, then \`pb record --task ${candidate.id} ...\`.`);
   } else {
     console.log(`\n  Run with --claim to mark it in_progress.`);
@@ -397,7 +546,7 @@ function cmdNext(args) {
 // ============================================================================
 function cmdRecord(args) {
   if (!args.task || !args.action || !args.status) {
-    console.error('Usage: pb record --task <id> --action <action> --status <status> [--result <r>] [--files a,b] [--notes "..."] [--agent <name>] [--skip-checks]');
+    console.error('Usage: pb record --task <id> --action <action> --status <status> [--result <r>] [--files a,b] [--notes "..."] [--agent <name>] [--loop <id>] [--skip-checks] [--require-loop]');
     console.error(`status must be one of: ${ALLOWED_STATUSES.join(', ')}`);
     process.exit(1);
   }
@@ -407,6 +556,13 @@ function cmdRecord(args) {
   }
 
   const task = backlogTasks().find((t) => t.id === args.task);
+  const loop = args.loop ? loopById(args.loop) : activeLoop();
+  if (args['require-loop'] && !loop) {
+    console.error('No active loop. Start one with `pb loop new`, or pass --loop <id>.');
+    process.exit(1);
+  }
+  const loopId = loop?.id || args.loop || 'legacy';
+  if (!loop && !args.loop) console.log('WARNING: no active loop; recording with loop_id=legacy.');
   let checksOutcome = 'none';
   if (args.status === 'done' && task) {
     const checks = taskChecks(task);
@@ -428,6 +584,7 @@ function cmdRecord(args) {
 
   const entry = {
     ts: nowISO(),
+    loop_id: loopId,
     task: args.task,
     agent: args.agent || 'agent',
     action: args.action,
@@ -448,10 +605,348 @@ function cmdRecord(args) {
     if (t && t.status !== args.status) {
       t.status = args.status;
       t.updated_at = entry.ts;
+      if (loop && !t.loop_id) t.loop_id = loop.id;
       writeBacklog(bl);
       console.log(`Backlog [${t.id}] → ${args.status}.`);
     }
   }
+}
+
+// ============================================================================
+//  loop — durable loop epochs. A failed loop can be closed/quarantined without
+//  erasing its journal rows; the next loop gets a clean active loop_id.
+// ============================================================================
+function claimedTasksForLoop(loopId) {
+  return backlogTasks().filter((t) => t.loop_id === loopId);
+}
+function terminalJournalForTask(loopId, taskId) {
+  return readJournal().filter((e) => !e.__malformed)
+    .some((e) => e.loop_id === loopId && e.task === taskId && ['done', 'blocked'].includes(e.status));
+}
+function closeGateErrors(loop, args = {}) {
+  const errors = [];
+  const failures = runValidate();
+  if (failures.length) errors.push(`Guardrails fail (${failures.length}); run \`pb validate\`.`);
+
+  const wip = backlogTasks().filter((t) => t.status === 'in_progress');
+  if (wip.length) errors.push(`${wip.length} task(s) still in_progress: ${wip.map((t) => t.id).join(', ')}`);
+
+  for (const t of claimedTasksForLoop(loop.id)) {
+    if (!terminalJournalForTask(loop.id, t.id)) errors.push(`[${t.id}] was claimed in this loop but has no terminal loop-scoped journal record.`);
+  }
+
+  const live = latestProcessRecords(loop.id).filter((proc) => proc.status !== 'stopped' && pidAlive(proc.pid));
+  if (live.length) errors.push(`${live.length} tracked process(es) still alive: ${live.map((p) => p.pid).join(', ')}`);
+
+  const journal = readJournal().filter((e) => !e.__malformed);
+  const reflectTs = lastReflectTs(journal, loop.id);
+  if (!args['allow-unreflected'] && (!reflectTs || (loop.started_at && reflectTs < loop.started_at))) {
+    errors.push('No reflection recorded for this loop; run `pb reflect --notes "..."` or close with --allow-unreflected.');
+  }
+
+  const cyc = readCycle();
+  if (!cyc.exists || !cyc.stop) errors.push(`No cycle stop condition found in ${CYCLE}.`);
+  return errors;
+}
+function writeLoopReport(loop, status, notes = '') {
+  const rel = loopArtifactsRel(loop.id, 'reports', 'close.md');
+  const entries = readJournal().filter((e) => !e.__malformed && e.loop_id === loop.id);
+  const lines = [
+    `# Loop Close — ${loop.id}`,
+    '',
+    `- status: ${status}`,
+    `- started_at: ${loop.started_at || ''}`,
+    `- closed_at: ${loop.closed_at || ''}`,
+    `- journal lines: ${loop.journal?.first_line ?? '?'}-${loop.journal?.last_line ?? '?'}`,
+    notes ? `- notes: ${notes}` : null,
+    '',
+    '## Journal',
+    '',
+  ].filter(Boolean);
+  if (!entries.length) lines.push('_No loop-scoped journal entries._');
+  for (const e of entries) lines.push(`- ${e.ts?.slice(0, 19) || '?'} [${e.task || '-'}] ${e.action || '?'} -> ${e.status || '?'}`);
+  ensureDir(dirname(rel));
+  writeFileSync(p(rel), lines.join('\n') + '\n', 'utf8');
+  return rel;
+}
+function writeQuarantine(loop, reason, stopped) {
+  const rel = loopArtifactsRel(loop.id, 'quarantine.md');
+  const lines = [
+    `# Loop Quarantine — ${loop.id}`,
+    '',
+    `- reason: ${reason}`,
+    `- started_at: ${loop.started_at || ''}`,
+    `- closed_at: ${loop.closed_at || ''}`,
+    `- journal lines: ${loop.journal?.first_line ?? '?'}-${loop.journal?.last_line ?? '?'}`,
+    '',
+    '## Processes',
+    '',
+  ];
+  if (!stopped.length) lines.push('_No live tracked processes stopped._');
+  for (const proc of stopped) lines.push(`- pid ${proc.pid}: ${proc.status} (${proc.cmd || proc.command || ''})`);
+  lines.push('', '## Next', '', 'Run `pb learn --loop ' + loop.id + ' --source user --notes "..."` before starting the next loop.');
+  ensureDir(dirname(rel));
+  writeFileSync(p(rel), lines.join('\n') + '\n', 'utf8');
+  return rel;
+}
+function failedLoopNeedsLearning(state) {
+  return [...state.loops].reverse().find((l) =>
+    l.status === 'failed' && !l.learning_skipped && lessonsForLoop(l.id).length === 0
+  ) || null;
+}
+function seedCycleFromLoop(loop, args) {
+  const cur = readCycle();
+  const phase = (Number.isInteger(cur.phase) ? cur.phase : 0) + 1;
+  const high = openLessons().filter((l) => l.severity === 'high');
+  const prior = high.length
+    ? high.map((l) => `- [${l.id}] ${l.problem || l.notes || l.raw_notes || '(no problem)'}`).join('\n')
+    : 'No open high-severity lessons.';
+  const challenges = args['from-lessons'] && high.length
+    ? high.map((l) => `- Avoid repeating ${l.loop_id || 'prior loop'}: ${l.problem || l.notes || l.raw_notes || '(no problem)'}`).join('\n')
+    : null;
+  const conflicts = args['from-lessons'] && high.length
+    ? 'Review open high-severity lessons before following host memory or old assumptions.'
+    : null;
+  ensureDir(dirname(CYCLE));
+  writeFileSync(p(CYCLE), cycleTemplate({
+    phase,
+    goal: args.goal || loop.goal,
+    stop: args.stop || loop.stop,
+    challenges,
+    priorChallenges: prior,
+    conflicts,
+  }), 'utf8');
+}
+function cmdLoop(args) {
+  const sub = args._[0] || 'status';
+  if (sub === 'new') {
+    const state = readLoops();
+    const active = state.active ? state.loops.find((l) => l.id === state.active) : null;
+    if (active && active.status === 'active') {
+      console.error(`Refusing: loop already active: ${active.id}. Close it first with \`pb loop close\`.`);
+      process.exit(1);
+    }
+    const failed = failedLoopNeedsLearning(state);
+    if (failed) {
+      if (!args['skip-learning']) {
+        console.error(`Refusing: failed loop ${failed.id} has no learning reflection.`);
+        console.error(`Run \`pb learn --loop ${failed.id} --source user --notes "..."\`, or use --skip-learning "reason".`);
+        process.exit(1);
+      }
+      failed.learning_skipped = { ts: nowISO(), reason: args['skip-learning'] === true ? 'no reason supplied' : String(args['skip-learning']) };
+    }
+    const id = nextLoopId(state);
+    const loop = {
+      id,
+      status: 'active',
+      started_at: nowISO(),
+      closed_at: null,
+      goal: args.goal || '',
+      stop: args.stop || '',
+      journal: { first_line: journalLineCount() + 1, last_line: null },
+      artifacts: loopArtifactsRel(id),
+      reason: null,
+    };
+    state.active = id;
+    state.loops.push(loop);
+    writeLoops(state);
+    for (const d of ['logs', 'reports', 'snapshots']) ensureDir(loopArtifactsRel(id, d));
+    if (args.goal || args.stop || args['from-lessons']) seedCycleFromLoop(loop, args);
+    console.log(`Opened loop: ${id}`);
+    console.log(`Artifacts: ${loop.artifacts}`);
+    console.log('Next: `pb status`, then claim work or record progress.');
+    return;
+  }
+
+  if (sub === 'status') {
+    const state = readLoops();
+    const loop = activeLoop();
+    console.log('\nLoop state:');
+    console.log(`  active: ${loop ? loop.id : '(none)'}`);
+    console.log(`  total:  ${state.loops.length}`);
+    if (loop) {
+      const entries = readJournal().filter((e) => !e.__malformed && e.loop_id === loop.id);
+      const live = latestProcessRecords(loop.id).filter((p) => p.status !== 'stopped' && pidAlive(p.pid));
+      const errors = closeGateErrors(loop, { 'allow-unreflected': true });
+      console.log(`  started: ${String(loop.started_at).slice(0, 19)}`);
+      console.log(`  journal entries: ${entries.length}`);
+      console.log(`  live tracked processes: ${live.length}`);
+      console.log(errors.length ? `  close gate: blocked (${errors.length})` : '  close gate: clear (reflection may still be required)');
+    }
+    const failed = failedLoopNeedsLearning(state);
+    if (failed) console.log(`  learning needed: ${failed.id}`);
+    console.log('');
+    return;
+  }
+
+  if (sub === 'close') {
+    const status = args.status || 'done';
+    if (!['done', 'failed', 'abandoned'].includes(status)) {
+      console.error('Usage: pb loop close --status <done|failed|abandoned> [--reason "..."] [--allow-unreflected]');
+      process.exit(1);
+    }
+    const state = readLoops();
+    const loop = activeLoop();
+    if (!loop) {
+      console.error('No active loop to close.');
+      process.exit(1);
+    }
+    if (status === 'done') {
+      const errors = closeGateErrors(loop, args);
+      if (errors.length) {
+        console.error(`Refusing to close ${loop.id} as done:`);
+        for (const e of errors) console.error(`  - ${e}`);
+        process.exit(1);
+      }
+    }
+    const stored = state.loops.find((l) => l.id === loop.id);
+    stored.status = status;
+    stored.closed_at = nowISO();
+    stored.reason = args.reason || null;
+    stored.journal = { ...(stored.journal || {}), last_line: journalLineCount() };
+    if (args['allow-unreflected']) stored.allow_unreflected = { ts: nowISO(), reason: args['allow-unreflected'] === true ? 'operator override' : String(args['allow-unreflected']) };
+    let artifact = null;
+    if (status === 'failed' || status === 'abandoned') {
+      const stopped = stopLoopProcesses(loop.id);
+      artifact = writeQuarantine(stored, args.reason || status, stopped);
+    } else {
+      artifact = writeLoopReport(stored, status, args.reason || '');
+    }
+    state.active = null;
+    writeLoops(state);
+    console.log(`Closed loop ${loop.id} -> ${status}.`);
+    if (artifact) console.log(`Artifact: ${artifact}`);
+    if (status === 'failed') console.log(`Next: \`pb learn --loop ${loop.id} --source user --notes "..."\`.`);
+    return;
+  }
+
+  if (sub === 'quarantine') {
+    const id = args._[1] || args.loop;
+    if (!id) { console.error('Usage: pb loop quarantine <loop_id>'); process.exit(1); }
+    const state = readLoops();
+    const loop = state.loops.find((l) => l.id === id);
+    if (!loop) { console.error(`Loop not found: ${id}`); process.exit(1); }
+    loop.status = 'quarantined';
+    loop.quarantined_at = nowISO();
+    writeLoops(state);
+    console.log(`Loop ${id} -> quarantined.`);
+    return;
+  }
+
+  console.error(`Unknown loop command: ${sub}`);
+  process.exit(1);
+}
+
+// ============================================================================
+//  learn — structured user/agent reflection. Raw lessons stay in lessons.ndjson;
+//  durable rules, repair tasks, and skills are explicit promotions.
+// ============================================================================
+function cmdLearn(args) {
+  if (args._[0] === 'status') {
+    const lessons = readLessons();
+    const open = lessons.filter((l) => l.status !== 'promoted' && l.status !== 'closed');
+    console.log('\nLessons:');
+    console.log(`  total: ${lessons.length}`);
+    console.log(`  open:  ${open.length}`);
+    for (const l of open) {
+      console.log(`  [${l.id}] ${l.severity || 'medium'} ${l.loop_id || 'legacy'} -> ${l.promotion || 'journal'}: ${l.problem || l.notes || l.raw_notes || ''}`);
+    }
+    console.log('');
+    return;
+  }
+
+  const loop = args.loop || activeLoop()?.id || latestLoop()?.id || 'legacy';
+  const notes = args.notes || args.problem || args._.join(' ');
+  if (!notes) {
+    console.error('Usage: pb learn --loop <id> --source user --notes "what went wrong" [--severity high] [--promotion memory|backlog|skill|journal] [--target <file-or-task>]');
+    process.exit(1);
+  }
+  const promotion = args.promotion || 'journal';
+  if (!['journal', 'memory', 'backlog', 'skill'].includes(promotion)) {
+    console.error('promotion must be one of: journal, memory, backlog, skill');
+    process.exit(1);
+  }
+  const entry = {
+    id: nextLessonId(),
+    loop_id: loop,
+    source: args.source || 'agent',
+    severity: args.severity || 'medium',
+    problem: args.problem || notes,
+    root_cause: args['root-cause'] || args.root_cause || null,
+    promotion,
+    promotion_target: args.target || null,
+    status: args.status || 'open',
+    applies_to: args.applies_to ? String(args.applies_to).split(',').map((s) => s.trim()).filter(Boolean) : [],
+    raw_notes: notes,
+    created_at: nowISO(),
+  };
+  appendNdjson(LESSONS, entry);
+  console.log(`Recorded lesson ${entry.id} for ${loop} -> ${promotion}.`);
+  if (promotion !== 'journal' && !entry.promotion_target) {
+    console.log('Promotion target is not set yet; add a backlog task or update the relevant memory/skill file before closing the lesson.');
+  }
+}
+
+// ============================================================================
+//  run / ps / stop — lightweight loop-scoped process tracking.
+// ============================================================================
+function cmdRun(args) {
+  const loop = activeLoop();
+  if (!loop) {
+    console.error('No active loop. Start one with `pb loop new` before `pb run`.');
+    process.exit(1);
+  }
+  const parts = args['--'] || args._;
+  if (!parts?.length) {
+    console.error('Usage: pb run -- <command>');
+    process.exit(1);
+  }
+  const cmd = parts.join(' ');
+  const stamp = nowISO().replace(/[:.]/g, '-');
+  const safe = String(parts[0]).replace(/[^a-zA-Z0-9._-]/g, '_') || 'command';
+  const outRel = loopArtifactsRel(loop.id, 'logs', `${stamp}-${safe}.out.log`);
+  const errRel = loopArtifactsRel(loop.id, 'logs', `${stamp}-${safe}.err.log`);
+  ensureDir(dirname(outRel));
+  const child = spawn(cmd, {
+    cwd: ROOT,
+    shell: true,
+    detached: true,
+    stdio: ['ignore', openSync(p(outRel), 'a'), openSync(p(errRel), 'a')],
+  });
+  child.unref();
+  appendNdjson(PROCESSES, {
+    ts: nowISO(),
+    loop_id: loop.id,
+    pid: child.pid,
+    cmd,
+    cwd: '.',
+    status: 'running',
+    logs: { stdout: outRel, stderr: errRel },
+  });
+  console.log(`Started [${loop.id}] pid ${child.pid}: ${cmd}`);
+  console.log(`Logs: ${outRel} / ${errRel}`);
+}
+
+function cmdPs(args) {
+  const loopId = args.loop || activeLoop()?.id;
+  const rows = latestProcessRecords(loopId || null);
+  console.log('\nTracked processes:');
+  if (!rows.length) console.log('  (none)');
+  for (const proc of rows) {
+    const alive = proc.status !== 'stopped' && pidAlive(proc.pid);
+    console.log(`  ${proc.loop_id || 'legacy'} pid ${proc.pid} ${alive ? 'alive' : 'not-alive'} ${proc.status || ''} ${proc.cmd || ''}`);
+  }
+  console.log('');
+}
+
+function cmdStop(args) {
+  const loopId = args.loop || activeLoop()?.id;
+  if (!loopId) {
+    console.error('Usage: pb stop --loop <loop_id>');
+    process.exit(1);
+  }
+  const stopped = stopLoopProcesses(loopId);
+  console.log(`Stopped ${stopped.length} tracked process(es) for ${loopId}.`);
 }
 
 // ============================================================================
@@ -484,6 +979,8 @@ function cmdReport(args) {
   lines.push('| --- | --- |');
   for (const s of ALLOWED_STATUSES) lines.push(`| ${s} | ${counts[s]} |`);
   lines.push(`| journal entries | ${filtered.length} |`);
+  lines.push(`| loops | ${readLoops().loops.length} |`);
+  lines.push(`| open lessons | ${openLessons().length} |`);
   lines.push('');
 
   lines.push('## Activity by task');
@@ -498,7 +995,8 @@ function cmdReport(args) {
         const files = e.files?.length ? ` _(files: ${e.files.join(', ')})_` : '';
         const notes = e.notes ? ` — ${e.notes}` : '';
         const checks = reportCheckMarker(e, taskById.get(e.task));
-        lines.push(`- \`${e.ts?.slice(0, 19)}\` **${e.action}** → ${e.status}${checks}${notes}${files}`);
+        const loop = e.loop_id ? ` _(${e.loop_id})_` : '';
+        lines.push(`- \`${e.ts?.slice(0, 19)}\`${loop} **${e.action}** → ${e.status}${checks}${notes}${files}`);
       }
       lines.push('');
     }
@@ -574,7 +1072,7 @@ function cmdBootstrap() {
   const created = [];
 
   writeIfMissing('playbook.yaml', `name: agent-playbook
-version: 0.2.0
+version: 0.3.0
 description: Repo-local agent playbook.
 entry: SKILL.md
 
@@ -599,6 +1097,9 @@ index:
     backlog: memory/backlog.yaml
     journal: memory/journal.ndjson
     cycle: memory/cycle.md
+    loops: memory/loops.yaml
+    lessons: memory/lessons.ndjson
+    processes: memory/processes.ndjson
   artifacts:
     reports: artifacts/reports
 
@@ -645,6 +1146,12 @@ orient → select → act → verify → record → report
 - Open: \`node scripts/pb.mjs cycle --new\` — confirm the cycle brief (goal / challenges / stop).
 - Close: \`node scripts/pb.mjs reflect\` — compare done tasks to the north_star; record notes.
 - \`pb checkpoint\` warns when work is claimed without a brief, or done tasks await reflection.
+
+## Loop epochs and learning
+- Open scoped work with \`node scripts/pb.mjs loop new --goal "..." --stop "..."\`.
+- Close clean work with \`pb loop close --status done\`.
+- Close contaminated work with \`pb loop close --status failed --reason "..."\`, then record
+  reflection with \`pb learn --loop <id> --source user --notes "..."\` before the next loop.
 
 ## Memory precedence
 Your host memory is the PAST; this folder is the project PRESENT/FUTURE. On any project conflict,
@@ -739,12 +1246,20 @@ function cmdAnchor(args) {
   const cycleLine = cur.exists
     ? `This cycle (phase ${cur.phase ?? '?'}): ${cur.goal || '(goal unset)'}  ·  Stop: ${cur.stop || '(unset)'}`
     : 'This cycle: (no brief — run `pb cycle --new`)';
+  const loop = activeLoop();
+  const loopLine = loop
+    ? `Loop: ${loop.id} active · artifacts: ${loop.artifacts || loopArtifactsRel(loop.id)}`
+    : 'Loop: (none active — run `pb loop new` for scoped work)';
+  const highLessons = openLessons().filter((l) => l.severity === 'high').length;
+  const lessonLine = `Lessons: ${highLessons} open high-severity · run \`pb learn status\``;
   const memRule = 'Memory precedence: your own/host memory is the PAST; this folder is the project PRESENT/FUTURE. On any project conflict the folder wins — surface it, do not silently follow host memory.';
 
   if (args.brief) {
     console.log(`[${name} anchor] master=${MASTER} · loop: ${loopDesc}`);
     console.log(purpose);
     console.log(cycleLine);
+    console.log(loopLine);
+    console.log(lessonLine);
     console.log(`Re-anchor to ${MASTER} each iteration. State is on disk (${BACKLOG}, ${JOURNAL}) — rehydrate with \`node scripts/pb.mjs status\`. ${memRule}`);
     return;
   }
@@ -752,6 +1267,8 @@ function cmdAnchor(args) {
   console.log(`Master (the fixation): ${MASTER}   |   Entry: ${ENTRY}`);
   console.log(purpose);
   console.log(cycleLine);
+  console.log(loopLine);
+  console.log(lessonLine);
   console.log(`Loop: ${loopDesc}`);
   const fix = master.fixation || [];
   if (fix.length) {
@@ -787,10 +1304,22 @@ function cmdCheckpoint(args) {
   const lastTs = journal.length ? journal[journal.length - 1].ts : null;
   const wip = tasks.filter((t) => t.status === 'in_progress');
   const nextTodo = tasks.filter((t) => t.status === 'todo').sort((a, b) => prio(a) - prio(b))[0];
+  const loopState = readLoops();
+  const loop = activeLoop();
+  const openHighLessons = openLessons().filter((l) => l.severity === 'high');
 
   const warnings = [];
   const failures = runValidate();
   if (failures.length) warnings.push(`Guardrails FAIL (${failures.length}) — run \`pb validate\`.`);
+  if (!loop && (wip.length > 0 || nextTodo)) warnings.push('No active loop — run `pb loop new` before claiming or recording scoped work.');
+  if (loopState.active && !loop) warnings.push(`Loop registry has non-active loop set as active: ${loopState.active}.`);
+  const failed = failedLoopNeedsLearning(loopState);
+  if (failed) warnings.push(`Failed loop ${failed.id} has no learning reflection — run \`pb learn --loop ${failed.id} --source user --notes "..."\`.`);
+  const firstLoopStarted = loopState.loops.map((l) => l.started_at).filter(Boolean).sort()[0] || null;
+  const unscoped = journal.filter((e) => !e.loop_id && (!firstLoopStarted || (e.ts || '') >= firstLoopStarted)).length;
+  if (unscoped) warnings.push(`${unscoped} post-loop journal entr${unscoped === 1 ? 'y has' : 'ies have'} no loop_id.`);
+  const nonActiveLive = latestProcessRecords().filter((proc) => proc.loop_id !== loop?.id && proc.status !== 'stopped' && pidAlive(proc.pid));
+  if (nonActiveLive.length) warnings.push(`${nonActiveLive.length} live tracked process(es) belong to a non-active loop.`);
   if (wip.length > 1) warnings.push(`${wip.length} tasks in_progress — keep ONE at a time; finish or release the rest.`);
   for (const t of wip) {
     const recorded = journal.some((e) => e.task === t.id && (!t.claimed_at || (e.ts || '') >= t.claimed_at));
@@ -805,8 +1334,13 @@ function cmdCheckpoint(args) {
   else if (hasClaimableWork && reflectTs && cyc.started && reflectTs > cyc.started) warnings.push('Cycle brief is stale — the last `pb reflect` closed the phase; open a new one with `pb cycle --new --force`.');
   const doneSinceReflect = journal.filter((e) => e.status === 'done' && e.action !== 'reflect' && (!reflectTs || (e.ts || '') > reflectTs)).length;
   if (doneSinceReflect > 0) warnings.push(`${doneSinceReflect} task(s) recorded done since the last reflect — run \`pb reflect\`.`);
+  if (openHighLessons.length) {
+    const cycleText = readText(CYCLE);
+    const missing = openHighLessons.filter((l) => !cycleText.includes(l.id));
+    if (missing.length) warnings.push(`${missing.length} open high-severity lesson(s) are not referenced by the active cycle brief.`);
+  }
 
-  console.log(`State: ${tasks.filter((t) => t.status === 'todo').length} todo · ${wip.length} in_progress · ${tasks.filter((t) => t.status === 'done').length} done · last journal: ${lastTs ? lastTs.slice(0, 19) : 'none'}`);
+  console.log(`State: ${tasks.filter((t) => t.status === 'todo').length} todo · ${wip.length} in_progress · ${tasks.filter((t) => t.status === 'done').length} done · loop: ${loop ? loop.id : 'none'} · lessons: ${openHighLessons.length} high · last journal: ${lastTs ? lastTs.slice(0, 19) : 'none'}`);
   if (warnings.length) {
     console.log('DRIFT detected:');
     for (const w of warnings) console.log(`  ! ${w}`);
@@ -825,6 +1359,8 @@ function cmdCheckpoint(args) {
       '',
       `- Re-anchor: read \`${MASTER}\` + \`${ENTRY}\`. Rehydrate: \`node scripts/pb.mjs status\`.`,
       `- In progress: ${wip.length ? wip.map((t) => `[${t.id}] ${t.title}`).join('; ') : 'none'}`,
+      `- Active loop: ${loop ? loop.id : 'none'}`,
+      `- Open high-severity lessons: ${openHighLessons.length}`,
       `- Last journal entry: ${lastTs ? lastTs.slice(0, 19) : 'none'}`,
       wip[0]
         ? `- Next: finish [${wip[0].id}], then \`pb record --task ${wip[0].id} ...\`.`
@@ -851,7 +1387,7 @@ function readCycle() {
   if (meta && meta.started instanceof Date) meta.started = meta.started.toISOString();
   return { exists: true, ...meta };
 }
-function cycleTemplate({ phase, goal, stop }) {
+function cycleTemplate({ phase, goal, stop, challenges, priorChallenges, conflicts }) {
   return `---
 phase: ${phase}
 started: "${nowISO()}"
@@ -867,18 +1403,18 @@ stop: ${stop ? JSON.stringify(stop) : '""'}
 ${goal || '(one sentence — the phase goal, distinct from the North Star)'}
 
 ## 2. What challenges do I foresee?
-(pre-mortem: what is most likely to go wrong this phase)
+${challenges || '(pre-mortem: what is most likely to go wrong this phase)'}
 
 ## 3. What were the previous challenges?
-(carry-over — seed from the last \`pb reflect\`)
+${priorChallenges || '(carry-over — seed from the last `pb reflect`)'}
 
 ## 4. Where do I stop / hand back?
 ${stop || '(the explicit stop condition — what "this phase is done" means, and the hand-back point)'}
 
 ## 5. Conflicts with my own (agent) memory?
-(Your host memory is the PAST; this folder is the project's PRESENT/FUTURE. If anything you
+${conflicts || `(Your host memory is the PAST; this folder is the project's PRESENT/FUTURE. If anything you
 "remember" about this project contradicts the North Star or this goal, NAME it here and treat
-the folder as truth — do not silently follow memory.)
+the folder as truth — do not silently follow memory.)`}
 `;
 }
 function cmdCycle(args) {
@@ -906,8 +1442,8 @@ function cmdCycle(args) {
   console.log(`  Full brief: ${CYCLE}\n`);
 }
 
-function lastReflectTs(journal) {
-  const r = journal.filter((e) => e.action === 'reflect');
+function lastReflectTs(journal, loopId = null) {
+  const r = journal.filter((e) => e.action === 'reflect' && (!loopId || e.loop_id === loopId));
   return r.length ? r[r.length - 1].ts : null;
 }
 function cmdReflect(args) {
@@ -928,8 +1464,9 @@ function cmdReflect(args) {
   console.log('\nAsk: did these advance the North Star + cycle goal? What changes? What carries into the next phase?');
 
   if (args.notes) {
+    const loop = args.loop ? loopById(args.loop) : activeLoop();
     const entry = {
-      ts: nowISO(), task: 'reflect', agent: args.agent || 'agent', action: 'reflect',
+      ts: nowISO(), loop_id: loop?.id || args.loop || 'legacy', task: 'reflect', agent: args.agent || 'agent', action: 'reflect',
       status: 'done', checks: 'none', result: null, files: [], notes: args.notes,
     };
     ensureDir(MEMORY_DIR);
@@ -1015,6 +1552,18 @@ function cmdHelp() {
                            Append a journal entry. Recording done RUNS the task's
                            acceptance_checks and refuses if they fail.
     report [--since DATE]  Roll the journal up into ${REPORTS_DIR}/report-<date>.md
+    loop new [--goal ".."] [--stop ".."] [--from-lessons]  Open a durable loop epoch
+    loop status           Show active loop, close gate, and learning blockers
+    loop close --status <done|failed|abandoned> [--reason ".."] [--allow-unreflected]
+                          Close the active loop; failed loops require a learning reflection
+                          before the next loop unless --skip-learning is stamped on loop new
+    loop quarantine <id>  Mark a failed/closed loop as quarantined
+    learn [--loop <id>] --source user --notes ".." [--severity high] [--promotion memory|backlog|skill|journal] [--target <file-or-task>]
+                          Record a structured lesson for a smarter next loop
+    learn status          Show open lessons
+    run -- <command>      Start a long-running command under the active loop and log it
+    ps [--loop <id>]      List tracked processes
+    stop [--loop <id>]    Stop tracked processes for a loop
     cycle [--new [--force] --goal ".." --stop ".."]  Forward half of the phase loop: the cycle brief (4+1 Qs). No args prints it.
     reflect [--notes ".."] Backward half: review done-since-last-reflect vs North Star; --notes records it
     validate               Structural guardrails (exit 1 on failure)
@@ -1040,6 +1589,11 @@ switch (cmd) {
   case 'next': cmdNext(args); break;
   case 'record': cmdRecord(args); break;
   case 'report': cmdReport(args); break;
+  case 'loop': cmdLoop(args); break;
+  case 'learn': cmdLearn(args); break;
+  case 'run': cmdRun(args); break;
+  case 'ps': cmdPs(args); break;
+  case 'stop': cmdStop(args); break;
   case 'validate': cmdValidate(args); break;
   case 'anchor': cmdAnchor(args); break;
   case 'checkpoint': cmdCheckpoint(args); break;

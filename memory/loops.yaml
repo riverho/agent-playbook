@@ -1,0 +1,13 @@
+active: null
+loops:
+  - id: loop-20260617-001
+    status: done
+    started_at: '2026-06-17T04:31:26.788Z'
+    closed_at: '2026-06-17T04:32:11.107Z'
+    goal: ''
+    stop: ''
+    journal:
+      first_line: 4
+      last_line: 5
+    artifacts: artifacts\loops\loop-20260617-001
+    reason: v0.3 implementation verified by npm test and pb validate

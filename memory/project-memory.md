@@ -20,6 +20,8 @@ This file is read on every session, right after `playbook.yaml`. Keep it short a
 4. Keep `pb validate` green before and after acting.
 5. When you learn something durable about this project, add it here as a numbered rule — that is
    how the playbook gets smarter over time.
+6. After a failed or confusing loop, capture the user's reflection before starting the next loop;
+   promote the lesson to project memory, backlog, or a new/updated skill only when it is reusable.
 
 ## Project Facts
 

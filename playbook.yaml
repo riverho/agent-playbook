@@ -13,7 +13,7 @@
 # ============================================================================
 
 name: agent-playbook
-version: 0.2.0
+version: 0.3.0
 description: >-
   A portable, agent-first playbook. Agents loop without friction: orient on the
   master, pick a task, run the matching skill/process, verify with executable
@@ -78,6 +78,9 @@ index:
     backlog: memory/backlog.yaml               # the task queue the loop pulls from
     journal: memory/journal.ndjson             # append-only machine record (agent-first)
     cycle: memory/cycle.md                     # the current phase brief (forward half of the loop)
+    loops: memory/loops.yaml                   # active/closed loop epochs
+    lessons: memory/lessons.ndjson             # structured reflections for smarter next loops
+    processes: memory/processes.ndjson         # tracked long-running processes by loop
   artifacts:
     reports: artifacts/reports                 # human-facing rollups (generated)
 
