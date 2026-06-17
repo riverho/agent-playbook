@@ -35,4 +35,4 @@ You cannot win by keeping everything in context. Survive by:
 Claude Code's auto-mode **classifier** blocks an agent from writing its own `.claude/settings.json`
 (self-modification). The harden step therefore cannot complete autonomously: pipe-test the hook
 commands, then **hand the exact hook JSON to the human** to paste in — never attempt the write from
-the agent. (Observed live during the 2026-06-11 summon-forge install.)
+the agent.

@@ -21,7 +21,7 @@
     "report": "node scripts/pb.mjs report",
     "list": "node scripts/pb.mjs list",
     "init": "node scripts/pb.mjs init",
-    "test": "node scripts/test-anchor-selective.mjs && node scripts/test-hollow-validate.mjs && node scripts/test-q5.mjs && node scripts/test-report-gates.mjs && node scripts/test-loop-epochs.mjs"
+    "test": "node scripts/test-anchor-selective.mjs && node scripts/test-hollow-validate.mjs && node scripts/test-q5.mjs && node scripts/test-report-gates.mjs && node scripts/test-loop-epochs.mjs && node scripts/test-next-claim-guard.mjs && node scripts/test-loop-fresh.mjs"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"

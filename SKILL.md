@@ -24,7 +24,7 @@ Repeat this until the backlog is clear:
 | Step | What | Command |
 | --- | --- | --- |
 | 1. Orient | Re-anchor + snapshot state | `node scripts/pb.mjs status` |
-| 2. Select | Pick + claim the next task | `node scripts/pb.mjs next --claim` |
+| 2. Select | Pick + claim the next task | `node scripts/pb.mjs next --claim` — refuses if there's no active loop or the cycle brief is missing/stale; `--force` overrides |
 | 3. Act | Follow the skill → process | open `skills/<skill>/SKILL.md`, then `processes/<process>.yaml` |
 | 4. Verify | Structure + the task's checks | `node scripts/pb.mjs validate` then `validate --task <id>` |
 | 5. Record | Log the outcome (enforced) | `node scripts/pb.mjs record --task <id> --action <a> --status <done\|blocked> --notes "..."` |
@@ -90,6 +90,10 @@ changing **cycle goal**:
 - **Close a phase:** `pb reflect` reviews what was recorded `done` since the last reflection against
   the North Star and records it. `pb checkpoint` warns on a missing/stale brief or on N tasks done
   without a `pb reflect`.
+- **Enforced, not just warned:** `pb next --claim` refuses to claim a task if there's no active loop,
+  no cycle brief, the brief's Q5 (memory-conflict check) is still the unfilled placeholder, or the
+  brief was left stale by a later `pb reflect`. Fix the precondition, or override with `--force`
+  (not recommended — it claims despite the gap).
 
 **Memory precedence:** on project matters this folder (`north_star` + `memory/`) outranks your own or
 host memory. Host memory is the past; the playbook is the present and future. On conflict, surface it
@@ -101,6 +105,13 @@ For scoped work, open a durable epoch with `node scripts/pb.mjs loop new --goal 
 New records are stamped with the active `loop_id`; long-running commands should use
 `node scripts/pb.mjs run -- <command>` so logs and PIDs are tied to that loop.
 
+- **Continuing** (default): the new loop inherits the existing backlog as-is — use this when the
+  remaining `todo` tasks still match the current repo state.
+- **Ground-up** (`loop new --fresh`): use this when the backlog is stale relative to disk (e.g. it
+  assumes earlier "done" tasks/artifacts that no longer exist, or paths that moved). `--fresh`
+  archives the current backlog to the new loop's artifacts dir (nothing is lost) and resets
+  `memory/backlog.yaml` to empty, so old tasks can't be silently claimed under the new loop. Add
+  tasks that reflect the current repo state afterward.
 - Clean close: `node scripts/pb.mjs loop close --status done`.
 - Contaminated close: `node scripts/pb.mjs loop close --status failed --reason "..."`.
 - Smarter next loop: after a failed loop, record user/agent reflection with

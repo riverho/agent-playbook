@@ -526,12 +526,24 @@ function cmdNext(args) {
 
   if (args.claim) {
     const loop = activeLoop();
+    const journal = readJournal().filter((e) => !e.__malformed);
+    const blockers = [];
+    if (!loop) blockers.push('No active loop — run `pb loop new` before claiming work.');
+    blockers.push(...cycleBlockers(journal));
+    if (blockers.length && !args.force) {
+      console.log(`\n  Refusing to claim [${candidate.id}] — phase-loop guardrail gap:`);
+      for (const b of blockers) console.log(`    ! ${b}`);
+      console.log('  Fix these, then re-run `pb next --claim` (or override with --force, not recommended).');
+      console.log('');
+      process.exit(1);
+    }
     candidate.status = 'in_progress';
     candidate.claimed_at = nowISO();
     if (loop) candidate.loop_id = loop.id;
     writeBacklog(bl);
     console.log(`\n  Claimed [${candidate.id}] → in_progress.`);
     if (loop) console.log(`  Loop: ${loop.id}`);
+    if (blockers.length) console.log(`  WARNING: claimed with --force despite ${blockers.length} guardrail gap(s).`);
     console.log(`  Next: do the work via the skill, then \`pb record --task ${candidate.id} ...\`.`);
   } else {
     console.log(`\n  Run with --claim to mark it in_progress.`);
@@ -749,12 +761,36 @@ function cmdLoop(args) {
     };
     state.active = id;
     state.loops.push(loop);
-    writeLoops(state);
     for (const d of ['logs', 'reports', 'snapshots']) ensureDir(loopArtifactsRel(id, d));
+
+    // --fresh: this loop starts from the current repo state, not the existing task
+    // model. Archive the backlog as-is (nothing is lost) and reset it to empty, so a
+    // stale backlog (tasks whose "done" artifacts no longer exist on disk, or whose
+    // remaining tasks assume them) can't be silently inherited and claimed.
+    let resetNote = null;
+    if (args.fresh) {
+      const bl = readData(BACKLOG) || { tasks: [] };
+      const tasks = Array.isArray(bl.tasks) ? bl.tasks : [];
+      if (tasks.length) {
+        const snapshotRel = loopArtifactsRel(id, 'backlog-snapshot-pre-fresh.yaml');
+        ensureDir(dirname(snapshotRel));
+        writeFileSync(p(snapshotRel), yaml.dump({ tasks }, { lineWidth: 100 }), 'utf8');
+        writeBacklog({ tasks: [] });
+        loop.reset_backlog = { archived_to: snapshotRel, count: tasks.length, ts: nowISO() };
+        resetNote = `Backlog reset for a ground-up loop — ${tasks.length} prior task(s) archived to ${snapshotRel}.`;
+      } else {
+        resetNote = 'Backlog reset requested, but it was already empty — nothing archived.';
+      }
+    }
+
+    writeLoops(state);
     if (args.goal || args.stop || args['from-lessons']) seedCycleFromLoop(loop, args);
     console.log(`Opened loop: ${id}`);
     console.log(`Artifacts: ${loop.artifacts}`);
-    console.log('Next: `pb status`, then claim work or record progress.');
+    if (resetNote) console.log(resetNote);
+    console.log(args.fresh
+      ? 'Next: add backlog tasks that reflect the current repo state, then `pb status`.'
+      : 'Next: `pb status`, then claim work or record progress.');
     return;
   }
 
@@ -1138,6 +1174,9 @@ hardening:
 orient → select → act → verify → record → report
 
 - Select: \`node scripts/pb.mjs next --claim\` — prints the task and its acceptance_checks.
+  Claiming is refused if there's no active loop or the cycle brief is missing/stale/has an
+  unanswered Q5 (see Phase loop below); fix the precondition or override with \`--force\`
+  (not recommended).
 - "Done" is enforced: \`pb record --status done\` runs the task's acceptance_checks (shell commands)
   and refuses if they fail. Exit codes, not prose.
 - Roll up: \`node scripts/pb.mjs report\`.
@@ -1145,10 +1184,14 @@ orient → select → act → verify → record → report
 ## Phase loop (open each phase, close it)
 - Open: \`node scripts/pb.mjs cycle --new\` — confirm the cycle brief (goal / challenges / stop).
 - Close: \`node scripts/pb.mjs reflect\` — compare done tasks to the north_star; record notes.
-- \`pb checkpoint\` warns when work is claimed without a brief, or done tasks await reflection.
+- \`pb checkpoint\` warns on drift (missing/stale brief, done tasks awaiting reflection); \`pb next
+  --claim\` enforces the missing/stale-brief part instead of just warning.
 
 ## Loop epochs and learning
 - Open scoped work with \`node scripts/pb.mjs loop new --goal "..." --stop "..."\`.
+- Default continues from the existing backlog. If it's stale relative to disk (assumes earlier
+  "done" artifacts/paths that no longer exist), use \`loop new --fresh\` instead — it archives the
+  current backlog (nothing lost) and resets it to empty for a ground-up loop.
 - Close clean work with \`pb loop close --status done\`.
 - Close contaminated work with \`pb loop close --status failed --reason "..."\`, then record
   reflection with \`pb learn --loop <id> --source user --notes "..."\` before the next loop.
@@ -1326,12 +1369,9 @@ function cmdCheckpoint(args) {
     if (!recorded) warnings.push(`[${t.id}] claimed but no progress recorded — \`pb record --task ${t.id} ...\` or release it.`);
   }
   // phase-loop drift: forward brief (cycle) + backward reflect
-  const cyc = readCycle();
   const reflectTs = lastReflectTs(journal);
   const hasClaimableWork = wip.length > 0 || Boolean(nextTodo);
-  if (hasClaimableWork && cyc.exists && readText(CYCLE).includes('(Your host memory is the PAST')) warnings.push('Cycle brief Q5 (memory-conflict check) is unanswered — fill it before claiming work.');
-  if (hasClaimableWork && !cyc.exists) warnings.push('No cycle brief — open the phase with `pb cycle --new` before claiming work.');
-  else if (hasClaimableWork && reflectTs && cyc.started && reflectTs > cyc.started) warnings.push('Cycle brief is stale — the last `pb reflect` closed the phase; open a new one with `pb cycle --new --force`.');
+  if (hasClaimableWork) warnings.push(...cycleBlockers(journal));
   const doneSinceReflect = journal.filter((e) => e.status === 'done' && e.action !== 'reflect' && (!reflectTs || (e.ts || '') > reflectTs)).length;
   if (doneSinceReflect > 0) warnings.push(`${doneSinceReflect} task(s) recorded done since the last reflect — run \`pb reflect\`.`);
   if (openHighLessons.length) {
@@ -1386,6 +1426,22 @@ function readCycle() {
   if (m) { try { meta = yaml.load(m[1]) || {}; } catch { meta = {}; } }
   if (meta && meta.started instanceof Date) meta.started = meta.started.toISOString();
   return { exists: true, ...meta };
+}
+// Blockers shared by `checkpoint` (warns) and `next --claim` (enforces): missing cycle
+// brief, a brief left stale by a later `pb reflect`, or an unanswered Q5 memory-conflict check.
+function cycleBlockers(journal) {
+  const cyc = readCycle();
+  const reflectTs = lastReflectTs(journal);
+  const blockers = [];
+  if (cyc.exists && readText(CYCLE).includes('(Your host memory is the PAST')) {
+    blockers.push('Cycle brief Q5 (memory-conflict check) is unanswered — fill it before claiming work.');
+  }
+  if (!cyc.exists) {
+    blockers.push('No cycle brief — open the phase with `pb cycle --new` before claiming work.');
+  } else if (reflectTs && cyc.started && reflectTs > cyc.started) {
+    blockers.push('Cycle brief is stale — the last `pb reflect` closed this phase; open a new one with `pb cycle --new --force`.');
+  }
+  return blockers;
 }
 function cycleTemplate({ phase, goal, stop, challenges, priorChallenges, conflicts }) {
   return `---
@@ -1547,12 +1603,18 @@ function cmdHelp() {
 
   Commands:
     status                 Orient: master summary, backlog, recent journal, guardrail state
-    next [--claim]         Select the next task; --claim marks it in_progress
+    next [--claim] [--force]
+                           Select the next task; --claim marks it in_progress. Claiming is
+                           refused if there's no active loop or the cycle brief is missing/stale
+                           (--force overrides, not recommended)
     record --task <id> --action <a> --status <s> [--result <r>] [--files a,b] [--notes "..."] [--agent <n>] [--skip-checks]
                            Append a journal entry. Recording done RUNS the task's
                            acceptance_checks and refuses if they fail.
     report [--since DATE]  Roll the journal up into ${REPORTS_DIR}/report-<date>.md
-    loop new [--goal ".."] [--stop ".."] [--from-lessons]  Open a durable loop epoch
+    loop new [--goal ".."] [--stop ".."] [--from-lessons] [--fresh]  Open a durable loop epoch.
+                          Default continues from the existing backlog. --fresh archives the
+                          current backlog (nothing lost) and resets it to empty for a ground-up
+                          loop, so stale tasks can't be silently inherited and claimed.
     loop status           Show active loop, close gate, and learning blockers
     loop close --status <done|failed|abandoned> [--reason ".."] [--allow-unreflected]
                           Close the active loop; failed loops require a learning reflection
