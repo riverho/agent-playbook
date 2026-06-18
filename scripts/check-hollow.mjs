@@ -3,9 +3,10 @@
 // only playbook *structure* (pb validate) and not the task's actual work.
 // Exit 1 if any actionable (todo/in_progress) task has a hollow gate.
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import yaml from 'js-yaml';
 const ROOT = process.argv[2] || '.';
-const bl = yaml.load(readFileSync(ROOT + '/memory/backlog.yaml', 'utf8')) || {};
+const bl = yaml.load(readFileSync(join(ROOT, 'memory', 'backlog.yaml'), 'utf8')) || {};
 const structuralOnly = (c) =>
   /(^|\s)(node\s+scripts\/pb\.mjs|pb(\.mjs)?|npm\s+run)\s+validate\b/.test(c.trim()) && !/--task/.test(c);
 let hollow = 0, actionableHollow = 0;

@@ -22,16 +22,22 @@ writeFileSync(join(root, 'skills/index.yaml'), 'skills: []\n');
 writeFileSync(join(root, 'memory/backlog.yaml'), [
   'tasks:',
   '  - id: A',
-  '    title: claimed task',
+  '    title: first task',
   '    status: todo',
   '    priority: 1',
+  '    acceptance_checks:',
+  '      - node scripts/pb.mjs validate',
+  '  - id: B',
+  '    title: task to claim',
+  '    status: todo',
+  '    priority: 2',
   '    acceptance_checks:',
   '      - node scripts/pb.mjs validate',
   '',
 ].join('\n'));
 writeFileSync(join(root, 'playbook.yaml'), [
   'name: t',
-  'version: 0.3.0',
+  'version: 0.3.1',
   'entry: SKILL.md',
   'paths:',
   '  scripts: scripts',
@@ -77,7 +83,7 @@ let loops = yaml.load(readFileSync(join(root, 'memory/loops.yaml'), 'utf8'));
 const firstLoop = loops.active;
 if (!firstLoop) throw new Error('loop new did not set active loop');
 
-pb(['record', '--task', 'T0', '--action', 'note', '--status', 'done', '--notes', 'scoped']);
+pb(['record', '--task', 'A', '--action', 'note', '--status', 'done', '--notes', 'scoped']);
 const firstJournal = JSON.parse(readFileSync(join(root, 'memory/journal.ndjson'), 'utf8').trim());
 if (firstJournal.loop_id !== firstLoop) throw new Error('record did not stamp active loop_id');
 

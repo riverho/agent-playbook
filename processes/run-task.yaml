@@ -19,6 +19,8 @@ applies_to:
 required_inputs:
   - a claimed backlog task (status in_progress) with a clear title
   - the task's acceptance_checks — executable shell commands that define "done"
+  - optional `commands` — executable shell commands the agent runs during `pb loop run --auto`
+  - optional `manual: true` — stops autonomous execution and requires human approval
   - any task-specific notes from memory/backlog.yaml
 
 canonical_steps:

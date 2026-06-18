@@ -24,8 +24,8 @@
 // ============================================================================
 
 import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, copyFileSync, cpSync, openSync } from 'node:fs';
-import { execSync, spawn } from 'node:child_process';
-import { resolve, dirname, join } from 'node:path';
+import { execSync, execFileSync, spawn } from 'node:child_process';
+import { resolve, dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
@@ -79,6 +79,62 @@ const PROCESSES = mMem.processes || 'memory/processes.ndjson';
 const ARTIFACTS_DIR = mPaths.artifacts || 'artifacts';
 const LOOP_ARTIFACTS_DIR = join(ARTIFACTS_DIR, 'loops');
 
+// --- safe execution helpers ------------------------------------------------
+function resolveExecutable(file) {
+  if (!file) return file;
+  if (existsSync(file) || isAbsolute(file)) return file;
+  const pathSep = process.platform === 'win32' ? ';' : ':';
+  const pathExt = process.env.PATHEXT || (process.platform === 'win32' ? '.EXE;.CMD;.BAT;.COM' : '');
+  const exts = pathExt.split(';').map((e) => e.toLowerCase()).filter(Boolean);
+  for (const dir of (process.env.PATH || '').split(pathSep)) {
+    for (const ext of exts) {
+      const candidate = join(dir, file + ext);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return file;
+}
+
+function shellSplit(cmd) {
+  const out = [];
+  let cur = '';
+  let quote = null;
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    if (quote) {
+      if (ch === '\\' && quote === '"') {
+        const nxt = cmd[i + 1];
+        if (nxt === '"' || nxt === '\\' || nxt === '$' || nxt === '`') { cur += nxt; i++; }
+        else { cur += ch; }
+      } else if (ch === quote) {
+        quote = null;
+      } else {
+        cur += ch;
+      }
+    } else {
+      if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') {
+        if (cur.length) { out.push(cur); cur = ''; }
+      } else if (ch === '"' || ch === "'") {
+        quote = ch;
+      } else if (ch === '\\') {
+        const nxt = cmd[i + 1];
+        if (nxt === '"' || nxt === "'") { cur += nxt; i++; }
+        else { cur += ch; }
+      } else {
+        cur += ch;
+      }
+    }
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+function loopArtifactsRel(loopId, ...parts) {
+  // Store relative artifact paths with forward slashes so the playbook stays
+  // carry-on portable across Windows and POSIX.
+  return join(LOOP_ARTIFACTS_DIR, loopId, ...parts).replace(/\\/g, '/');
+}
+
 // --- structured helpers ----------------------------------------------------
 function readJournal() {
   return readText(JOURNAL)
@@ -89,6 +145,73 @@ function readJournal() {
       catch { return { __malformed: true, __line: i + 1, raw: l }; }
     });
 }
+function appendJournal(entry) {
+  ensureDir(MEMORY_DIR);
+  appendFileSync(p(JOURNAL), JSON.stringify(entry) + '\n', 'utf8');
+}
+function recordAuto(loop, task, status, checksOutcome, notes) {
+  const entry = {
+    ts: nowISO(),
+    loop_id: loop.id,
+    task: task.id,
+    agent: 'auto',
+    action: 'auto-execute',
+    status,
+    checks: checksOutcome,
+    result: null,
+    files: [],
+    notes,
+  };
+  appendJournal(entry);
+  updateBacklogState(task.id, { status, updated_at: entry.ts });
+  console.log(`Recorded [${task.id}] auto-execute → ${status}${checksOutcome !== 'none' ? ` (checks: ${checksOutcome})` : ''}`);
+}
+
+const BACKLOG_STATE = join(dirname(BACKLOG), 'backlog-state.json');
+
+function readBacklogState() {
+  try {
+    const text = readText(BACKLOG_STATE);
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeBacklogState(state) {
+  ensureDir(dirname(BACKLOG_STATE));
+  writeFileSync(p(BACKLOG_STATE), JSON.stringify(state, null, 2) + '\n', 'utf8');
+}
+
+function updateBacklogState(taskId, patch) {
+  const state = readBacklogState();
+  const existing = state[taskId] || {};
+  state[taskId] = {
+    ...existing,
+    status: patch.status ?? existing.status,
+    loop_id: patch.loop_id ?? existing.loop_id,
+    claimed_at: patch.claimed_at ?? existing.claimed_at,
+    updated_at: patch.updated_at ?? existing.updated_at,
+  };
+  writeBacklogState(state);
+}
+
+function backlogTasks() {
+  const bl = readData(BACKLOG);
+  const tasks = Array.isArray(bl?.tasks) ? bl.tasks : [];
+  const state = readBacklogState();
+  return tasks.map((t) => {
+    const s = state[t.id] || {};
+    return {
+      ...t,
+      status: s.status ?? t.status,
+      loop_id: s.loop_id ?? t.loop_id,
+      claimed_at: s.claimed_at ?? t.claimed_at,
+      updated_at: s.updated_at ?? t.updated_at,
+    };
+  });
+}
+
 function writeBacklog(obj) {
   if (BACKLOG.endsWith('.json')) {
     writeFileSync(p(BACKLOG), JSON.stringify(obj, null, 2) + '\n', 'utf8');
@@ -99,7 +222,44 @@ function writeBacklog(obj) {
     '# Managed by `pb` (next --claim / record). Edit by hand to add tasks.\n' +
     `# status: ${ALLOWED_STATUSES.join(' | ')}   priority: 1 = highest\n` +
     '# acceptance_checks: shell commands that must exit 0 before `record --status done` succeeds.\n';
-  writeFileSync(p(BACKLOG), header + yaml.dump(obj, { lineWidth: 100 }), 'utf8');
+  // If the backlog file does not exist yet, seed it wholesale (bootstrap/init).
+  if (!existsSync(p(BACKLOG))) {
+    writeFileSync(p(BACKLOG), header + yaml.dump(obj, { lineWidth: 100 }), 'utf8');
+    return;
+  }
+  // If the task list is being explicitly reset to empty (e.g. loop new --fresh),
+  // rewrite the file and clear the machine-managed sidecar.
+  const emptying = Array.isArray(obj.tasks) && obj.tasks.length === 0;
+  if (emptying) {
+    writeFileSync(p(BACKLOG), header + yaml.dump(obj, { lineWidth: 100 }), 'utf8');
+    writeBacklogState({});
+    return;
+  }
+  // Normal status updates go to the sidecar so hand-edited formatting/comments
+  // in backlog.yaml are preserved.
+  const state = readBacklogState();
+  for (const t of obj.tasks || []) {
+    state[t.id] = {
+      status: t.status,
+      loop_id: t.loop_id || undefined,
+      claimed_at: t.claimed_at || undefined,
+      updated_at: t.updated_at || undefined,
+    };
+  }
+  writeBacklogState(state);
+}
+function appendBacklogTask(task) {
+  if (BACKLOG.endsWith('.json')) {
+    const bl = readData(BACKLOG) || { tasks: [] };
+    bl.tasks.push(task);
+    writeFileSync(p(BACKLOG), JSON.stringify(bl, null, 2) + '\n', 'utf8');
+    return;
+  }
+  const text = readText(BACKLOG);
+  const taskYaml = yaml.dump(task, { lineWidth: 100 }).trimEnd();
+  const indented = taskYaml.split('\n').map((line, i) => (i === 0 ? '  - ' + line : '    ' + line)).join('\n');
+  const sep = text.endsWith('\n') ? '' : '\n';
+  writeFileSync(p(BACKLOG), text + sep + indented + '\n', 'utf8');
 }
 function ensureDir(rel) {
   const dir = p(rel);
@@ -161,9 +321,6 @@ function nextLoopId(state = readLoops()) {
   const n = state.loops.filter((l) => String(l.id || '').startsWith(prefix)).length + 1;
   return `${prefix}-${String(n).padStart(3, '0')}`;
 }
-function loopArtifactsRel(loopId, ...parts) {
-  return join(LOOP_ARTIFACTS_DIR, loopId, ...parts);
-}
 function readLessons() {
   return readNdjson(LESSONS).filter((e) => !e.__malformed);
 }
@@ -201,9 +358,9 @@ function pidAlive(pid) {
 }
 function stopPid(pid) {
   const n = Number(pid);
-  if (!Number.isInteger(n) || n <= 0) return false;
+  if (!Number.isInteger(n) || n <= 0 || n >= 2 ** 31) return false;
   try {
-    if (process.platform === 'win32') execSync(`taskkill /PID ${n} /T /F`, { stdio: 'pipe' });
+    if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(n), '/T', '/F'], { stdio: 'pipe' });
     else process.kill(-n, 'SIGTERM');
     return true;
   } catch {
@@ -224,7 +381,7 @@ function stopLoopProcesses(loopId) {
   return stopped;
 }
 
-// minimal arg parser: positionals in `_`, --key value / --flag true
+// minimal arg parser: positionals in `_`, --key value / --flag true / --key=value
 function parseArgs(argv) {
   const out = { _: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -234,10 +391,20 @@ function parseArgs(argv) {
       break;
     }
     if (tok.startsWith('--')) {
-      const key = tok.slice(2);
-      const nxt = argv[i + 1];
-      if (nxt === undefined || nxt.startsWith('--')) out[key] = true;
-      else { out[key] = nxt; i++; }
+      let key, value;
+      const eq = tok.indexOf('=');
+      if (eq > 2) {
+        key = tok.slice(2, eq);
+        value = tok.slice(eq + 1);
+      } else {
+        key = tok.slice(2);
+        const nxt = argv[i + 1];
+        if (nxt === undefined || nxt.startsWith('--')) value = true;
+        else { value = nxt; i++; }
+      }
+      if (out[key] === undefined) out[key] = value;
+      else if (Array.isArray(out[key])) out[key].push(value);
+      else out[key] = [out[key], value];
     } else {
       out._.push(tok);
     }
@@ -246,10 +413,6 @@ function parseArgs(argv) {
 }
 
 const prio = (t) => (typeof t.priority === 'number' ? t.priority : 100);
-function backlogTasks() {
-  const bl = readData(BACKLOG);
-  return Array.isArray(bl?.tasks) ? bl.tasks : [];
-}
 function skillFor(skillId) {
   const idx = readData(SKILL_INDEX);
   return (idx?.skills || []).find((s) => s.id === skillId) || null;
@@ -266,6 +429,10 @@ function unmetDeps(task, tasks) {
 // ============================================================================
 function taskChecks(task) {
   return (Array.isArray(task?.acceptance_checks) ? task.acceptance_checks : [])
+    .filter((c) => typeof c === 'string' && c.trim());
+}
+function taskCommands(task) {
+  return (Array.isArray(task?.commands) ? task.commands : [])
     .filter((c) => typeof c === 'string' && c.trim());
 }
 
@@ -285,8 +452,11 @@ function runChecks(task) {
   const checks = taskChecks(task);
   const results = [];
   for (const cmd of checks) {
+    const parts = shellSplit(cmd);
+    if (!parts.length) continue;
+    const [file, ...argv] = parts;
     try {
-      execSync(cmd, { cwd: ROOT, stdio: 'pipe', timeout: 120000 });
+      execFileSync(resolveExecutable(file), argv, { cwd: ROOT, stdio: 'pipe', timeout: 120000 });
       results.push({ cmd, ok: true });
     } catch (e) {
       const out = [e.stdout, e.stderr].filter(Boolean).map(String).join('\n').trim();
@@ -298,6 +468,29 @@ function runChecks(task) {
 function printCheckResults(results) {
   for (const r of results) {
     console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  ${r.cmd}`);
+    if (!r.ok && r.output) console.log(r.output.split(/\r?\n/).map((l) => `        ${l}`).join('\n'));
+  }
+}
+function runCommands(task) {
+  const cmds = taskCommands(task);
+  const results = [];
+  for (const cmd of cmds) {
+    const parts = shellSplit(cmd);
+    if (!parts.length) continue;
+    const [file, ...argv] = parts;
+    try {
+      execFileSync(resolveExecutable(file), argv, { cwd: ROOT, stdio: 'pipe', timeout: 120000 });
+      results.push({ cmd, ok: true });
+    } catch (e) {
+      const out = [e.stdout, e.stderr].filter(Boolean).map(String).join('\n').trim();
+      results.push({ cmd, ok: false, output: out.split(/\r?\n/).slice(-8).join('\n') });
+    }
+  }
+  return results;
+}
+function printCommandResults(results) {
+  for (const r of results) {
+    console.log(`  ${r.ok ? 'OK' : 'FAIL'}  ${r.cmd}`);
     if (!r.ok && r.output) console.log(r.output.split(/\r?\n/).map((l) => `        ${l}`).join('\n'));
   }
 }
@@ -346,23 +539,31 @@ function runValidate() {
   ok(exists(BACKLOG), `Missing backlog: ${BACKLOG}`);
   ok(existsSync(p(JOURNAL)), `Missing journal: ${JOURNAL} (run \`pb init\` to create it)`);
 
-  // 5. backlog well-formed
-  const bl = readData(BACKLOG);
-  if (bl) {
-    const tasks = Array.isArray(bl.tasks) ? bl.tasks : null;
-    ok(tasks, `${BACKLOG} must contain a "tasks" list`);
-    const ids = new Set((tasks || []).map((t) => t.id).filter(Boolean));
-    for (const t of tasks || []) {
-      ok(t.id, 'A backlog task is missing an id');
-      ok(ALLOWED_STATUSES.includes(t.status), `Task ${t.id} has invalid status: ${t.status}`);
-      if (t.skill) ok(skillFor(t.skill), `Task ${t.id} references unknown skill: ${t.skill}`);
-      for (const dep of t.dependencies || []) {
-        ok(ids.has(dep), `Task ${t.id} references unknown dependency: ${dep}`);
-      }
-      if (t.acceptance_checks !== undefined) {
-        ok(Array.isArray(t.acceptance_checks) && t.acceptance_checks.every((c) => typeof c === 'string'),
-          `Task ${t.id} acceptance_checks must be a list of shell command strings`);
-      }
+  // 5. backlog well-formed (use merged tasks so sidecar state is validated too)
+  let tasks = [];
+  try {
+    tasks = backlogTasks();
+  } catch (e) {
+    failures.push(`${BACKLOG} parse error: ${e.message}`);
+  }
+  const ids = new Set(tasks.map((t) => t.id).filter(Boolean));
+  for (const t of tasks) {
+    ok(t.id, 'A backlog task is missing an id');
+    ok(ALLOWED_STATUSES.includes(t.status), `Task ${t.id} has invalid status: ${t.status}`);
+    if (t.skill) ok(skillFor(t.skill), `Task ${t.id} references unknown skill: ${t.skill}`);
+    for (const dep of t.dependencies || []) {
+      ok(ids.has(dep), `Task ${t.id} references unknown dependency: ${dep}`);
+    }
+    if (t.acceptance_checks !== undefined) {
+      ok(Array.isArray(t.acceptance_checks) && t.acceptance_checks.every((c) => typeof c === 'string'),
+        `Task ${t.id} acceptance_checks must be a list of shell command strings`);
+    }
+    if (t.commands !== undefined) {
+      ok(Array.isArray(t.commands) && t.commands.every((c) => typeof c === 'string'),
+        `Task ${t.id} commands must be a list of shell command strings`);
+    }
+    if (t.manual !== undefined) {
+      ok(typeof t.manual === 'boolean', `Task ${t.id} manual must be a boolean`);
     }
   }
 
@@ -404,6 +605,13 @@ function runValidate() {
 
 function cmdValidate(args) {
   if (typeof args.task === 'string') {
+    // Per-task checks are not a substitute for structural guardrails.
+    const failures = runValidate();
+    if (failures.length) {
+      console.error('Playbook validation FAILED:\n');
+      for (const f of failures) console.error(`  - ${f}`);
+      process.exit(1);
+    }
     const task = backlogTasks().find((t) => t.id === args.task);
     if (!task) {
       console.error(`Task not found in ${BACKLOG}: ${args.task}`);
@@ -488,8 +696,7 @@ function cmdStatus() {
 //  next — select the next task (and optionally claim it)
 // ============================================================================
 function cmdNext(args) {
-  const bl = readData(BACKLOG) || { tasks: [] };
-  const tasks = Array.isArray(bl.tasks) ? bl.tasks : [];
+  const tasks = backlogTasks();
   const todo = tasks.filter((t) => t.status === 'todo');
   const claimable = todo.filter((t) => unmetDeps(t, tasks).length === 0);
   const candidate = claimable.sort((a, b) => prio(a) - prio(b))[0];
@@ -529,6 +736,8 @@ function cmdNext(args) {
     const journal = readJournal().filter((e) => !e.__malformed);
     const blockers = [];
     if (!loop) blockers.push('No active loop — run `pb loop new` before claiming work.');
+    const wip = tasks.find((t) => t.status === 'in_progress');
+    if (wip) blockers.push(`Task [${wip.id}] is already in_progress. Finish or record it blocked before claiming another.`);
     blockers.push(...cycleBlockers(journal));
     if (blockers.length && !args.force) {
       console.log(`\n  Refusing to claim [${candidate.id}] — phase-loop guardrail gap:`);
@@ -537,10 +746,11 @@ function cmdNext(args) {
       console.log('');
       process.exit(1);
     }
-    candidate.status = 'in_progress';
-    candidate.claimed_at = nowISO();
-    if (loop) candidate.loop_id = loop.id;
-    writeBacklog(bl);
+    updateBacklogState(candidate.id, {
+      status: 'in_progress',
+      claimed_at: nowISO(),
+      loop_id: loop ? loop.id : undefined,
+    });
     console.log(`\n  Claimed [${candidate.id}] → in_progress.`);
     if (loop) console.log(`  Loop: ${loop.id}`);
     if (blockers.length) console.log(`  WARNING: claimed with --force despite ${blockers.length} guardrail gap(s).`);
@@ -549,6 +759,65 @@ function cmdNext(args) {
     console.log(`\n  Run with --claim to mark it in_progress.`);
   }
   console.log('');
+}
+
+function nextPlanId() {
+  const prefix = `plan-${today().replace(/-/g, '')}`;
+  const tasks = backlogTasks();
+  const n = tasks.filter((t) => String(t.id || '').startsWith(prefix)).length + 1;
+  return `${prefix}-${String(n).padStart(3, '0')}`;
+}
+
+// ============================================================================
+//  plan — generate a backlog task from a goal. The agent (or human) refines the
+//  acceptance_checks; the command only formalizes the goal into the backlog.
+// ============================================================================
+function cmdPlan(args) {
+  if (!args.goal) {
+    console.error('Usage: pb plan --goal "..." [--skill <id>] [--priority <n>] [--check <cmd>] [--manual]');
+    console.error('Pass --check multiple times to add multiple acceptance checks.');
+    process.exit(1);
+  }
+  const loop = activeLoop();
+  if (!loop) {
+    console.error('No active loop. Start one with `pb loop new` before planning.');
+    process.exit(1);
+  }
+  const journal = readJournal().filter((e) => !e.__malformed);
+  const blockers = cycleBlockers(journal);
+  if (blockers.length) {
+    console.error('Refusing to plan — phase-loop guardrail gap:');
+    for (const b of blockers) console.error(`  ! ${b}`);
+    process.exit(1);
+  }
+  const skill = args.skill || 'run-task';
+  if (skill && !skillFor(skill)) {
+    console.error(`Unknown skill: ${skill}`);
+    process.exit(1);
+  }
+  const priority = Number(args.priority) || 1;
+  const checksRaw = args.check || [];
+  const checks = (Array.isArray(checksRaw) ? checksRaw : (checksRaw === true ? [] : [checksRaw]))
+    .map((s) => String(s).trim()).filter(Boolean);
+  const task = {
+    id: nextPlanId(),
+    title: String(args.goal).trim(),
+    status: 'todo',
+    skill,
+    priority,
+    acceptance_checks: checks,
+  };
+  if (args.manual) task.manual = true;
+  appendBacklogTask(task);
+  console.log(`Planned [${task.id}] ${task.title}`);
+  console.log(`  skill: ${skill}`);
+  console.log(`  priority: ${priority}`);
+  if (checks.length) {
+    console.log('  acceptance_checks:');
+    for (const c of checks) console.log(`    $ ${c}`);
+  } else {
+    console.log('  acceptance_checks: none — add executable checks before auto-executing.');
+  }
 }
 
 // ============================================================================
@@ -568,6 +837,10 @@ function cmdRecord(args) {
   }
 
   const task = backlogTasks().find((t) => t.id === args.task);
+  if (['done', 'blocked'].includes(args.status) && !task) {
+    console.error(`Task not found in backlog: ${args.task}. Cannot record ${args.status} for an unknown task.`);
+    process.exit(1);
+  }
   const loop = args.loop ? loopById(args.loop) : activeLoop();
   if (args['require-loop'] && !loop) {
     console.error('No active loop. Start one with `pb loop new`, or pass --loop <id>.');
@@ -606,21 +879,18 @@ function cmdRecord(args) {
     files: args.files ? String(args.files).split(',').map((s) => s.trim()).filter(Boolean) : [],
     notes: args.notes || null,
   };
-  ensureDir(MEMORY_DIR);
-  appendFileSync(p(JOURNAL), JSON.stringify(entry) + '\n', 'utf8');
+  appendJournal(entry);
   console.log(`Recorded [${entry.task}] ${entry.action} → ${entry.status}${checksOutcome !== 'none' ? ` (checks: ${checksOutcome})` : ''}`);
 
   // keep backlog coherent: sync the task's status when the iteration ends it
-  if (['done', 'blocked'].includes(args.status)) {
-    const bl = readData(BACKLOG);
-    const t = (bl?.tasks || []).find((x) => x.id === args.task);
-    if (t && t.status !== args.status) {
-      t.status = args.status;
-      t.updated_at = entry.ts;
-      if (loop && !t.loop_id) t.loop_id = loop.id;
-      writeBacklog(bl);
-      console.log(`Backlog [${t.id}] → ${args.status}.`);
-    }
+  if (task && ['done', 'blocked'].includes(args.status)) {
+    const existing = readBacklogState()[task.id] || {};
+    updateBacklogState(task.id, {
+      status: args.status,
+      updated_at: entry.ts,
+      loop_id: existing.loop_id || (loop ? loop.id : undefined),
+    });
+    console.log(`Backlog [${task.id}] → ${args.status}.`);
   }
 }
 
@@ -729,6 +999,91 @@ function seedCycleFromLoop(loop, args) {
     conflicts,
   }), 'utf8');
 }
+function cmdLoopRunAuto(args) {
+  const loop = activeLoop();
+  if (!loop) {
+    console.error('No active loop. Start one with `pb loop new` before running auto.');
+    process.exit(1);
+  }
+  const journal = readJournal().filter((e) => !e.__malformed);
+  const blockers = cycleBlockers(journal);
+  if (blockers.length) {
+    console.error('Refusing auto run — phase-loop guardrail gap:');
+    for (const b of blockers) console.error(`  ! ${b}`);
+    process.exit(1);
+  }
+  const maxTasks = Number(args['max-tasks']) || Infinity;
+  const retry = Number(args.retry) || 3;
+  const dryRun = args['dry-run'];
+  let tasksCompleted = 0;
+  let finalStatus = 'done';
+  console.log(`\nStarting autonomous run for [${loop.id}] (max-tasks=${maxTasks === Infinity ? 'unlimited' : maxTasks}, retry=${retry})${dryRun ? ' [DRY RUN]' : ''}\n`);
+  while (tasksCompleted < maxTasks) {
+    const tasks = backlogTasks();
+    const todo = tasks.filter((t) => t.status === 'todo');
+    const claimable = todo.filter((t) => unmetDeps(t, tasks).length === 0).sort((a, b) => prio(a) - prio(b));
+    const candidate = claimable[0];
+    if (!candidate) {
+      console.log('No actionable tasks. Autonomous run complete.');
+      break;
+    }
+    if (candidate.manual) {
+      console.log(`Stopping auto run: [${candidate.id}] is marked manual and requires human approval.`);
+      finalStatus = 'blocked';
+      break;
+    }
+    const cmds = taskCommands(candidate);
+    const checks = taskChecks(candidate);
+    if (!cmds.length && !checks.length) {
+      console.log(`Stopping auto run: [${candidate.id}] has no executable commands or checks (honor-only).`);
+      finalStatus = 'blocked';
+      break;
+    }
+    if (dryRun) {
+      console.log(`[DRY RUN] would claim [${candidate.id}] ${candidate.title}`);
+      console.log(`[DRY RUN] would run ${cmds.length} command(s) and ${checks.length} check(s).`);
+      break;
+    }
+    updateBacklogState(candidate.id, { status: 'in_progress', claimed_at: nowISO(), loop_id: loop.id });
+    console.log(`Claimed [${candidate.id}] ${candidate.title}`);
+    let cmdResults = [];
+    if (cmds.length) {
+      console.log(`Running ${cmds.length} command(s):`);
+      cmdResults = runCommands(candidate);
+      printCommandResults(cmdResults);
+    }
+    if (cmdResults.some((r) => !r.ok)) {
+      const failed = cmdResults.find((r) => !r.ok);
+      recordAuto(loop, candidate, 'blocked', 'none', `Auto-run command failed: ${failed.cmd}`);
+      console.error(`[${candidate.id}] → blocked (command failed)`);
+      finalStatus = 'blocked';
+      break;
+    }
+    let passed = false;
+    let checkResults = [];
+    for (let attempt = 0; attempt <= retry; attempt++) {
+      if (attempt > 0) console.log(`  Retry ${attempt}/${retry}...`);
+      checkResults = runChecks(candidate);
+      if (!checkResults.some((r) => !r.ok)) { passed = true; break; }
+      printCheckResults(checkResults);
+    }
+    if (passed) {
+      recordAuto(loop, candidate, 'done', checks.length ? 'passed' : 'none', 'Auto-executed and verified.');
+      console.log(`[${candidate.id}] → done`);
+      tasksCompleted++;
+    } else {
+      recordAuto(loop, candidate, 'blocked', 'failed', `Auto-run acceptance checks failed after ${retry} retries.`);
+      console.error(`[${candidate.id}] → blocked (checks failed)`);
+      finalStatus = 'blocked';
+      break;
+    }
+  }
+  console.log(`\nAutonomous run finished. ${tasksCompleted} task(s) completed.`);
+  if (tasksCompleted > 0 || finalStatus === 'blocked') {
+    try { cmdReport(args); } catch { /* report is best-effort */ }
+  }
+}
+
 function cmdLoop(args) {
   const sub = args._[0] || 'status';
   if (sub === 'new') {
@@ -769,8 +1124,7 @@ function cmdLoop(args) {
     // remaining tasks assume them) can't be silently inherited and claimed.
     let resetNote = null;
     if (args.fresh) {
-      const bl = readData(BACKLOG) || { tasks: [] };
-      const tasks = Array.isArray(bl.tasks) ? bl.tasks : [];
+      const tasks = backlogTasks();
       if (tasks.length) {
         const snapshotRel = loopArtifactsRel(id, 'backlog-snapshot-pre-fresh.yaml');
         ensureDir(dirname(snapshotRel));
@@ -869,6 +1223,15 @@ function cmdLoop(args) {
     return;
   }
 
+  if (sub === 'run') {
+    if (args.auto) {
+      cmdLoopRunAuto(args);
+      return;
+    }
+    console.error('Usage: pb loop run --auto [--max-tasks N] [--retry N] [--dry-run]');
+    process.exit(1);
+  }
+
   console.error(`Unknown loop command: ${sub}`);
   process.exit(1);
 }
@@ -938,15 +1301,18 @@ function cmdRun(args) {
     process.exit(1);
   }
   const cmd = parts.join(' ');
+  const file = parts[0];
+  const argv = parts.slice(1);
   const stamp = nowISO().replace(/[:.]/g, '-');
-  const safe = String(parts[0]).replace(/[^a-zA-Z0-9._-]/g, '_') || 'command';
+  const safe = String(file).replace(/[^a-zA-Z0-9._-]/g, '_') || 'command';
   const outRel = loopArtifactsRel(loop.id, 'logs', `${stamp}-${safe}.out.log`);
   const errRel = loopArtifactsRel(loop.id, 'logs', `${stamp}-${safe}.err.log`);
   ensureDir(dirname(outRel));
-  const child = spawn(cmd, {
+  const child = spawn(resolveExecutable(file), argv, {
     cwd: ROOT,
-    shell: true,
+    shell: false,
     detached: true,
+    windowsHide: true,
     stdio: ['ignore', openSync(p(outRel), 'a'), openSync(p(errRel), 'a')],
   });
   child.unref();
@@ -1108,7 +1474,7 @@ function cmdBootstrap() {
   const created = [];
 
   writeIfMissing('playbook.yaml', `name: agent-playbook
-version: 0.3.0
+version: 0.3.1
 description: Repo-local agent playbook.
 entry: SKILL.md
 
@@ -1611,11 +1977,18 @@ function cmdHelp() {
                            Append a journal entry. Recording done RUNS the task's
                            acceptance_checks and refuses if they fail.
     report [--since DATE]  Roll the journal up into ${REPORTS_DIR}/report-<date>.md
+    plan --goal ".." [--skill <id>] [--priority <n>] [--check <cmd>] [--manual]
+                          Convert a goal into a backlog task with acceptance_checks.
+                          Pass --check multiple times. Set --manual to require human approval.
     loop new [--goal ".."] [--stop ".."] [--from-lessons] [--fresh]  Open a durable loop epoch.
                           Default continues from the existing backlog. --fresh archives the
                           current backlog (nothing lost) and resets it to empty for a ground-up
                           loop, so stale tasks can't be silently inherited and claimed.
     loop status           Show active loop, close gate, and learning blockers
+    loop run --auto [--max-tasks N] [--retry N] [--dry-run]
+                          Autonomous loop execution: claim, execute commands, run checks,
+                          record done/blocked, and retry failed checks up to N times.
+                          Stops on blockers, manual tasks, honor-only tasks, or empty backlog.
     loop close --status <done|failed|abandoned> [--reason ".."] [--allow-unreflected]
                           Close the active loop; failed loops require a learning reflection
                           before the next loop unless --skip-learning is stamped on loop new
@@ -1651,6 +2024,7 @@ switch (cmd) {
   case 'next': cmdNext(args); break;
   case 'record': cmdRecord(args); break;
   case 'report': cmdReport(args); break;
+  case 'plan': cmdPlan(args); break;
   case 'loop': cmdLoop(args); break;
   case 'learn': cmdLearn(args); break;
   case 'run': cmdRun(args); break;

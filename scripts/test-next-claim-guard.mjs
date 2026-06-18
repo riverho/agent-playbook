@@ -37,7 +37,7 @@ writeFileSync(join(root, 'memory/backlog.yaml'), [
 ].join('\n'));
 writeFileSync(join(root, 'playbook.yaml'), [
   'name: t',
-  'version: 0.3.0',
+  'version: 0.3.1',
   'entry: SKILL.md',
   'paths:',
   '  scripts: scripts',
