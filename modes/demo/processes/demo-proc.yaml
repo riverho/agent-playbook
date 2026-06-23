@@ -1,0 +1,7 @@
+name: demo-proc
+purpose: A minimal pack-local process proving Stage-2 composition (resolves under the demo mode only).
+canonical_steps:
+  - Mount under the demo mode via the active-mode ∪ engine union.
+  - Do nothing of consequence — this is an existence proof, not real work.
+acceptance_checks:
+  - node scripts/pb.mjs validate

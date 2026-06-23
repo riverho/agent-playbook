@@ -1,0 +1,143 @@
+{
+  "plan-20260621-001": {
+    "status": "done",
+    "loop_id": "loop-20260621-001",
+    "claimed_at": "2026-06-21T03:56:28.898Z",
+    "updated_at": "2026-06-21T03:59:26.702Z"
+  },
+  "plan-20260621-002": {
+    "status": "done",
+    "loop_id": "loop-20260621-001",
+    "claimed_at": "2026-06-21T03:59:46.445Z",
+    "updated_at": "2026-06-21T04:00:05.258Z"
+  },
+  "plan-20260621-003": {
+    "status": "done",
+    "loop_id": "loop-20260621-001",
+    "claimed_at": "2026-06-21T04:00:13.465Z",
+    "updated_at": "2026-06-22T08:04:40.151Z"
+  },
+  "oc-skeleton": {
+    "status": "done",
+    "loop_id": "loop-20260621-001",
+    "claimed_at": "2026-06-22T15:42:18.812Z",
+    "updated_at": "2026-06-22T15:42:18.895Z"
+  },
+  "oc-defer": {
+    "status": "done",
+    "loop_id": "loop-20260621-001",
+    "claimed_at": "2026-06-22T15:42:18.898Z",
+    "updated_at": "2026-06-22T15:42:19.533Z"
+  },
+  "oc-plugin": {
+    "status": "done",
+    "loop_id": "loop-20260621-001",
+    "claimed_at": "2026-06-22T15:42:19.536Z",
+    "updated_at": "2026-06-22T15:42:19.671Z"
+  },
+  "oc-commands": {
+    "status": "done",
+    "loop_id": "loop-20260621-001",
+    "claimed_at": "2026-06-22T15:42:19.674Z",
+    "updated_at": "2026-06-22T15:42:19.745Z"
+  },
+  "oc-agent": {
+    "status": "done",
+    "loop_id": "loop-20260621-001",
+    "claimed_at": "2026-06-22T15:42:19.747Z",
+    "updated_at": "2026-06-22T15:42:19.816Z"
+  },
+  "oc-inject": {
+    "status": "done",
+    "loop_id": "loop-20260621-001",
+    "claimed_at": "2026-06-22T15:42:19.818Z",
+    "updated_at": "2026-06-22T15:42:19.985Z"
+  },
+  "phase-20260622-001": {
+    "status": "done",
+    "loop_id": "loop-20260621-001",
+    "claimed_at": "2026-06-22T15:57:39.209Z",
+    "updated_at": "2026-06-22T16:24:32.135Z"
+  },
+  "mode-schema": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "claimed_at": "2026-06-22T17:25:04.574Z",
+    "updated_at": "2026-06-22T17:27:18.694Z"
+  },
+  "mode-resolve": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "claimed_at": "2026-06-22T17:40:17.171Z",
+    "updated_at": "2026-06-22T17:44:33.474Z"
+  },
+  "agent-identity": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "claimed_at": "2026-06-22T18:09:47.768Z",
+    "updated_at": "2026-06-22T18:12:47.325Z"
+  },
+  "mode-principles": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "claimed_at": "2026-06-22T18:39:47.705Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-06-22T18:44:05.127Z"
+  },
+  "wip-per-agent": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "claimed_at": "2026-06-22T19:09:47.821Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-06-22T19:13:32.307Z"
+  },
+  "atomic-claim": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "claimed_at": "2026-06-22T19:39:46.618Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-06-22T19:43:13.174Z"
+  },
+  "mode-routed-claim": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "claimed_at": "2026-06-22T20:09:47.636Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-06-22T20:12:11.778Z"
+  },
+  "pack-resolution": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "claimed_at": "2026-06-23T03:09:14.795Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-06-23T03:12:04.624Z"
+  },
+  "pack-carryon-validate": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "claimed_at": "2026-06-23T03:17:13.769Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-06-23T03:19:29.618Z"
+  },
+  "demo-pack-proof": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "claimed_at": "2026-06-23T03:24:13.417Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-06-23T03:27:53.775Z"
+  }
+}

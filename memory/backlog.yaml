@@ -2,4 +2,338 @@
 # Managed by `pb` (next --claim / record). Edit by hand to add tasks.
 # status: todo | in_progress | blocked | done   priority: 1 = highest
 # acceptance_checks: shell commands that must exit 0 before `record --status done` succeeds.
-tasks: []
+tasks:
+  # ==========================================================================
+  # Phase 8 — give the coding pack its OWN domain skills. The 5 existing skills
+  # are owner:core engine ops (run-task/install/harden/release/nl) and stay
+  # GLOBAL so every pack inherits them. coding gains pack-local DOMAIN skills.
+  # ==========================================================================
+  - id: coding-pack-skills
+    title: Give modes/coding/ its own pack-local domain skills (engine ops stay global)
+    status: todo
+    skill: harden
+    priority: 1
+    notes: >-
+      Stage-2 follow-on. Audit confirmed the 5 current skills are owner:core engine operations
+      (run-task, install, harden, release, nl) needed by EVERY pack — they stay in the global
+      indices, NOT migrated. Instead, give the coding pack genuinely coding-DOMAIN skills:
+      create modes/coding/skills/<id>/SKILL.md + modes/coding/processes/<id>.yaml for at least
+      one real coding skill (e.g. code-review and/or refactor), register them ONLY in
+      modes/coding/skills/index.yaml + modes/coding/processes/index.yaml, and repoint coding.yaml's
+      skills_index/processes_index at those pack-local indices. The union resolver keeps the global
+      engine skills available under coding (engine globals UNION pack-local). Behavioral test
+      scripts/test-coding-pack-skills.mjs: the new coding skill(s) resolve under coding AND engine
+      skills (run-task/harden) still resolve under coding (union); the coding skill(s) are NOT
+      visible under demo; check-modes passes (pack-local well-formed + carry-on). Carry-on; .mjs only.
+    acceptance_checks:
+      - node scripts/test-coding-pack-skills.mjs
+      - node scripts/check-modes.mjs
+      - node scripts/pb.mjs validate
+
+  # ==========================================================================
+  # Phase 7 — Stage 2: composable pack indices. Engine resolves skill/process as
+  # (active_mode's indices) UNION (engine globals). Proof = a pack mounts with
+  # ZERO pb.mjs change. Floor invariant; coding behavior unchanged.
+  # ==========================================================================
+  - id: pack-resolution
+    title: Resolve skills/processes from active_mode indices UNION engine globals
+    status: todo
+    skill: harden
+    priority: 1
+    notes: >-
+      Stage 2 core. Add resolvedSkillEntries()/resolvedProcessEntries() that merge the active
+      mode's skills_index/processes_index (resolveModeId -> loadMode) with the engine globals
+      (SKILL_INDEX/PROCESS_INDEX), additively (engine ids stay resolvable; pack ids add). Route
+      skillFor() (pb.mjs:496), validate's index reads (~631-666), and cmdList() (~1633) through
+      them. coding's pointers already equal the global files, so its union == globals == NO
+      behavior change. scripts/test-pack-resolution.mjs: a skill present ONLY in a mode-local
+      index resolves when that mode is active and NOT under a different mode; existing engine
+      skills (harden/nl/run-task) still resolve under coding (regression). Carry-on; .mjs only.
+    acceptance_checks:
+      - node scripts/test-pack-resolution.mjs
+      - node scripts/pb.mjs validate
+  - id: pack-carryon-validate
+    title: Validate a mounted pack is well-formed and carry-on (no deps inside a pack)
+    status: todo
+    skill: harden
+    priority: 2
+    dependencies: [pack-resolution]
+    notes: >-
+      Extend check-modes.mjs (or add scripts/check-pack.mjs): for each mode whose indices point
+      at PACK-LOCAL files (under modes/<id>/), assert the index parses, every referenced skill/
+      process file exists, and the pack dir contains NO dependency manifest (package.json /
+      node_modules) — packs are pure md+yaml (carry-on). scripts/test-pack-carryon.mjs: a pack
+      with a missing referenced file FAILS; a pack carrying package.json FAILS carry-on; a clean
+      pack PASSES. Modes pointing at the global indices (coding) are exempt from the pack-local
+      checks.
+    acceptance_checks:
+      - node scripts/test-pack-carryon.mjs
+      - node scripts/pb.mjs validate
+  - id: demo-pack-proof
+    title: A real second pack mounts with ZERO pb.mjs change (the existence proof)
+    status: todo
+    skill: harden
+    priority: 3
+    dependencies: [pack-resolution]
+    notes: >-
+      Create modes/demo/ — a minimal second pack with its OWN skill+process registered ONLY in
+      modes/demo/skills/index.yaml + modes/demo/processes/index.yaml (the mode's skills_index/
+      processes_index point there). Register the demo mode in playbook.yaml modes:. This is the
+      proof the whole design hinges on: a non-coding pack mounts purely from YAML.
+      scripts/test-demo-pack.mjs: under demo mode the pack-local skill resolves and appears in
+      `pb list`; under coding it does NOT; and pb.mjs contains no 'demo'-specific code (resolution
+      is data-driven). Keep the demo pack tiny and carry-on (passes pack-carryon-validate).
+    acceptance_checks:
+      - node scripts/test-demo-pack.mjs
+      - node scripts/check-modes.mjs
+      - node scripts/pb.mjs validate
+  - id: plan-20260621-001
+    title: Run .cmd/.bat shims from acceptance_checks on Windows
+    status: todo
+    skill: harden
+    priority: 1
+    notes: >-
+      Bug A+B+C in scripts/pb.mjs. Add runCommand(file, argv, opts) helper
+      next to resolveExecutable; route runChecks (line 459), runCommands
+      (line 482), and cmdRun (line 1311) through it. .cmd/.bat files on
+      Windows are dispatched via cmd.exe /d /s /c with verbatim quoting
+      so paths with spaces work.
+    acceptance_checks:
+      - node scripts/test-win32-runner.mjs
+      - node scripts/pb.mjs validate
+  - id: plan-20260621-002
+    title: Record durable Windows portability rules in project memory
+    status: todo
+    skill: harden
+    priority: 2
+    notes: >-
+      Add 3 numbered rules to memory/project-memory.md so future agents
+      don't re-introduce the bug. Verify with scripts/check-win32-rules.mjs.
+    acceptance_checks:
+      - node scripts/check-win32-rules.mjs
+      - node scripts/pb.mjs validate
+  - id: plan-20260621-003
+    title: Cover pb run -- background .cmd shim path on Windows
+    status: todo
+    skill: harden
+    priority: 3
+    notes: >-
+      Extend test-win32-runner.mjs to also exercise `pb run --` with a
+      .cmd shim in detached mode and assert it spawns (pid recorded in
+      memory/processes.ndjson) and the process terminates cleanly via
+      pb ps + taskkill.
+    acceptance_checks:
+      - node scripts/test-win32-runner.mjs
+      - node scripts/pb.mjs validate
+  - id: oc-skeleton
+    title: Scaffold the OpenCode adapter skeleton (config + README)
+    status: todo
+    skill: harden
+    priority: 1
+    notes: >-
+      adapters/opencode/ holds the carry-on adapter bundle. opencode.json
+      registers the plugin; README maps OpenCode cadence (session.idle) onto the
+      playbook contract (pb acceptance_checks).
+    acceptance_checks:
+      - node scripts/check-opencode-adapter.mjs skeleton
+  - id: oc-defer
+    title: Add --defer-blocked to the auto-loop driver (skip blocked, stop on no-progress)
+    status: todo
+    skill: harden
+    priority: 2
+    notes: >-
+      cmdLoopRunAuto in scripts/pb.mjs: on a faulted task, record blocked and
+      continue instead of breaking. Terminal status is stalled if anything was
+      deferred. Behavioral test builds a temp fixture and asserts t1 done /
+      t2 blocked / t3 done.
+    acceptance_checks:
+      - node scripts/test-defer-blocked.mjs
+      - node scripts/pb.mjs validate
+  - id: oc-plugin
+    title: Write the OpenCode plugin (session.idle driver + shell.env + session.created)
+    status: todo
+    skill: harden
+    priority: 3
+    dependencies: [oc-skeleton, oc-defer]
+    notes: >-
+      adapters/opencode/plugins/opencode-playbook.js. Idle heartbeat runs
+      `pb loop run --auto --defer-blocked` while a loop is armed; shell.env injects
+      PB_ROOT; session.created re-anchors. Default off (no runaway turns).
+    acceptance_checks:
+      - node --check adapters/opencode/plugins/opencode-playbook.js
+      - node scripts/check-opencode-adapter.mjs plugin
+  - id: oc-commands
+    title: Write the OpenCode slash commands (/pb-loop, /pb-status)
+    status: todo
+    skill: harden
+    priority: 4
+    dependencies: [oc-skeleton]
+    notes: >-
+      adapters/opencode/commands/*.md — markdown commands with frontmatter that
+      target the playbook subagent and embed pb shell output.
+    acceptance_checks:
+      - node scripts/check-opencode-adapter.mjs commands
+  - id: oc-agent
+    title: Write the bounded OpenCode subagent (bash scoped to pb.mjs)
+    status: todo
+    skill: harden
+    priority: 5
+    dependencies: [oc-skeleton]
+    notes: >-
+      adapters/opencode/agents/playbook.md — mode subagent, edit denied, bash
+      permission allow-listed to `node scripts/pb.mjs *`.
+    acceptance_checks:
+      - node scripts/check-opencode-adapter.mjs agent
+  - id: oc-inject
+    title: Register the opencode hardening profile in playbook.yaml
+    status: todo
+    skill: harden
+    priority: 6
+    dependencies: [oc-defer]
+    notes: >-
+      hardening.auto_inject.opencode maps session.created/idle/compacting to
+      anchor/checkpoint, mirroring the claude_code profile.
+    acceptance_checks:
+      - node scripts/check-opencode-adapter.mjs inject
+      - node scripts/pb.mjs validate
+  - id: phase-20260622-001
+    title: Build the natural-language playbook skill (intent grammar + tests)
+    status: todo
+    skill: nl
+    priority: 1
+    notes: >-
+      skills/nl/SKILL.md teaches an agent to translate natural-language requests
+      into pb commands. processes/use-playbook.yaml is the canonical shape.
+      scripts/check-nl-skill.mjs asserts structural correctness (files exist, parse,
+      indices reference them). scripts/test-nl-routing.mjs runs ≥8 canonical phrases
+      through the same matcher the agent uses and asserts the intent, so the grammar
+      is concrete — not hand-wavy. The matcher is pure Node stdlib (no external deps)
+      and lives in scripts/lib/nl-router.mjs so both the test and the skill can
+      reference it. Carry-on: no npm deps, no forks.
+    acceptance_checks:
+      - node scripts/check-nl-skill.mjs
+      - node scripts/test-nl-routing.mjs
+      - node scripts/pb.mjs validate
+
+  # ==========================================================================
+  # Phase 6 — multi-agent + modes architecture. Two tracks sharing one schema.
+  # Floor invariant: modes ride ON enforcement, never weaken it. coding = first
+  # mode, with an intentionally-EMPTY directive (empty = inherit host prompt).
+  # ==========================================================================
+  - id: mode-schema
+    title: Add modes/ + modes/coding.yaml (empty directive) + default_mode in the master
+    status: todo
+    skill: harden
+    priority: 1
+    notes: >-
+      Track A / Stage 1, step 1 — the seam. Create modes/ and modes/coding.yaml: id,
+      description, directive: "" (PRESENT but EMPTY by intent — empty means "inherit the host
+      agent's system prompt", a non-blocking placeholder, NOT a hollow gate), and a principles
+      list of 3-5 entries each tagged `kind: check|advice` (check declares an executable
+      `check:` command; advice is an anchor nudge). Add `default_mode: coding` and a `modes:`
+      registry to playbook.yaml. coding.yaml declares `skills_index`/`processes_index` pointing
+      at TODAY's global files (Stage-2-ready pointer; do NOT move skills now). Checker
+      scripts/check-modes.mjs asserts: modes/ + coding.yaml exist & parse; `directive` key
+      PRESENT (empty string ACCEPTED); every principle has kind in {check,advice}; default_mode
+      resolves to a real registered mode; registry index pointers reference real files. Carry-on:
+      pure yaml, .mjs checker (no node -e, no cmd-specials per project-memory #7-9).
+    acceptance_checks:
+      - node scripts/check-modes.mjs
+      - node scripts/pb.mjs validate
+  - id: mode-resolve
+    title: Mode resolution + pb mode show/set + one-line anchor injection
+    status: todo
+    skill: harden
+    priority: 2
+    dependencies: [mode-schema]
+    notes: >-
+      Track A / Stage 1, step 2. Resolution rule: task.mode ?? loop.mode ?? master.default_mode.
+      Add `pb mode show` (active mode + its directive/principles) and `pb mode set <id>`. Anchor
+      injection is ADDITIVE and tiny: exactly ONE line in `--brief`
+      (`Mode: coding · principles: <names>`) and the principle list in full anchor. EMPTY
+      directive is non-blocking: anchor prints an "inherits host system prompt" note and exits 0
+      — it must never gate. Behavioral test scripts/test-mode-resolve.mjs asserts: `mode set` then
+      `mode show` reports it; `anchor --brief` contains exactly ONE `Mode:` line; empty directive
+      does NOT block (exit 0 + inherit note); a task-level `mode:` overrides default_mode.
+    acceptance_checks:
+      - node scripts/test-mode-resolve.mjs
+      - node scripts/pb.mjs validate
+  - id: agent-identity
+    title: Stamp agent_id + mode + claimed_by on claims and journal; pick claim-ledger authority
+    status: todo
+    skill: harden
+    priority: 3
+    dependencies: [mode-schema]
+    notes: >-
+      Track B / step 1 — the shared schema serving BOTH modes and multi-agent. Add agent_id
+      (from PB_AGENT_ID env, default "agent"), mode (resolved), and claimed_by to the claim
+      record and journal entries. Designate backlog-state.json as the single claim-ledger
+      authority (backlog.yaml becomes static task definition) so concurrent writers don't race
+      two files. Behavioral test scripts/test-agent-identity.mjs: claim with PB_AGENT_ID set and
+      assert journal entry + claim record carry agent_id, mode, claimed_by; assert a sane default
+      agent_id when unset.
+    acceptance_checks:
+      - node scripts/test-agent-identity.mjs
+      - node scripts/pb.mjs validate
+  - id: mode-principles
+    title: Wire kind:check principles into validate (advice stays nudge-only)
+    status: todo
+    skill: harden
+    priority: 4
+    dependencies: [mode-resolve]
+    notes: >-
+      Track A / Stage 1, step 3 — keep modes from going faith-based. A principle with
+      `kind: check` declares an executable `check:` command that runs under the active mode (e.g.
+      run_lint_after_edit -> lint exits 0); `kind: advice` principles are anchor text only and
+      never gate. Behavioral test scripts/test-mode-principles.mjs: a check-kind principle whose
+      command fails makes the mode's validation exit nonzero; an advice-kind principle never
+      gates; toggling/removing a check principle changes the gate accordingly.
+    acceptance_checks:
+      - node scripts/test-mode-principles.mjs
+      - node scripts/pb.mjs validate
+  - id: wip-per-agent
+    title: Scope the one-in-progress guard (and reflect barrier) per agent_id
+    status: todo
+    skill: harden
+    priority: 5
+    dependencies: [agent-identity]
+    notes: >-
+      Track B / step 2 — remove the accidental global singletons written for one agent. The
+      "one in_progress" guard (pb.mjs:761) and the reflect/cycle barriers must scope per agent_id
+      so N agents don't serialize to ~1. Behavioral test scripts/test-wip-per-agent.mjs: two
+      distinct agent_ids each claim a task and BOTH are allowed (a global guard would reject the
+      2nd); the SAME agent_id claiming a second task while one is in_progress is still rejected.
+    acceptance_checks:
+      - node scripts/test-wip-per-agent.mjs
+      - node scripts/pb.mjs validate
+  - id: atomic-claim
+    title: Atomic claim via lockfile so a concurrent second claimer is rejected
+    status: todo
+    skill: harden
+    priority: 6
+    dependencies: [agent-identity, wip-per-agent]
+    notes: >-
+      Track B / step 3 — THE multi-agent primitive (the "lock backlog" issue). Make claim a
+      compare-and-swap on the claim-ledger authority guarded by an O_EXCL lockfile (carry-on:
+      lockfile only, no DB/daemon). Two concurrent claimers of the same single task must resolve
+      to exactly one winner; the loser is rejected, not a double-claim. Behavioral test
+      scripts/test-atomic-claim.mjs simulates two concurrent claims of one task and asserts
+      exactly one in_progress record results and the other claim is refused.
+    acceptance_checks:
+      - node scripts/test-atomic-claim.mjs
+      - node scripts/pb.mjs validate
+  - id: mode-routed-claim
+    title: Route claiming by mode — an agent of mode X claims only mode-X (or untagged) tasks
+    status: todo
+    skill: harden
+    priority: 7
+    dependencies: [mode-resolve, agent-identity]
+    notes: >-
+      Track B / step 4 — ties the tracks together: the per-task `mode:` is the work-router, so a
+      pool of mode-specialized agents shares one board. `pb next` for an agent running mode X only
+      offers tasks whose mode is X or unset. Behavioral test scripts/test-mode-routing.mjs: a
+      backlog with mode:coding and mode:legal tasks; a coding agent claims only the coding task
+      and leaves the legal one for a legal agent; untagged tasks remain claimable by any mode.
+    acceptance_checks:
+      - node scripts/test-mode-routing.mjs
+      - node scripts/pb.mjs validate

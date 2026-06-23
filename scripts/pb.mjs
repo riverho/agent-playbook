@@ -23,7 +23,7 @@
 //  Only dependency: js-yaml.
 // ============================================================================
 
-import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, copyFileSync, cpSync, openSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, copyFileSync, cpSync, openSync, closeSync, statSync, unlinkSync } from 'node:fs';
 import { execSync, execFileSync, spawn } from 'node:child_process';
 import { resolve, dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -72,6 +72,10 @@ const MEMORY_DIR = dirname(BACKLOG) || 'memory';
 const ENTRY = master.entry || 'SKILL.md';
 const ALLOWED_STATUSES = (master.guardrails && master.guardrails.allowed_statuses) || ['todo', 'in_progress', 'blocked', 'done'];
 const NORTH_STAR = (typeof master.north_star === 'string' && master.north_star.trim()) ? master.north_star.trim().replace(/\s+/g, ' ') : null;
+// modes — persona packs mounted on the floor. DEFAULT_MODE is the fallback in the
+// resolution chain (task.mode ?? loop.mode ?? default_mode). MODES is the id->file registry.
+const DEFAULT_MODE = (typeof master.default_mode === 'string' && master.default_mode.trim()) ? master.default_mode.trim() : null;
+const MODES = (master.modes && typeof master.modes === 'object' && !Array.isArray(master.modes)) ? master.modes : {};
 const CYCLE = mMem.cycle || 'memory/cycle.md';
 const LOOPS = mMem.loops || 'memory/loops.yaml';
 const LESSONS = mMem.lessons || 'memory/lessons.ndjson';
@@ -93,6 +97,27 @@ function resolveExecutable(file) {
     }
   }
   return file;
+}
+
+// On Windows, execFileSync/spawn with shell:false cannot launch .cmd/.bat shims
+// (EINVAL — Node refuses to exec .bat/.cmd directly). The fix is to dispatch via
+// `cmd.exe /d /c` so cmd.exe does PATHEXT lookup and runs npm.cmd / pnpm.cmd /
+// yarn.cmd. Node's default Windows auto-quoting (when windowsVerbatimArguments
+// is NOT set) joins argv elements with quoting for paths-with-spaces. Caveats:
+// argv that contains cmd.exe-special chars (( ) < > & |) is passed verbatim —
+// cmd.exe will interpret them. For those, callers should pre-shell-escape.
+// Do NOT pass /s — /s + a quoted file path strips both quotes and breaks paths.
+function runCommandSync(file, argv, opts = {}) {
+  if (process.platform === 'win32') {
+    return execFileSync('cmd.exe', ['/d', '/c', file, ...argv], opts);
+  }
+  return execFileSync(resolveExecutable(file), argv, opts);
+}
+function spawnCommand(file, argv, opts = {}) {
+  if (process.platform === 'win32') {
+    return spawn('cmd.exe', ['/d', '/c', file, ...argv], { ...opts, windowsHide: true });
+  }
+  return spawn(resolveExecutable(file), argv, { ...opts, windowsHide: true });
 }
 
 function shellSplit(cmd) {
@@ -191,10 +216,62 @@ function updateBacklogState(taskId, patch) {
     status: patch.status ?? existing.status,
     loop_id: patch.loop_id ?? existing.loop_id,
     claimed_at: patch.claimed_at ?? existing.claimed_at,
+    // multi-agent: backlog-state.json is the single claim-ledger authority.
+    // claimed_by = the agent holding the lease; agent_id = same at claim time;
+    // mode = the persona pack the task is being worked under.
+    claimed_by: patch.claimed_by ?? existing.claimed_by,
+    agent_id: patch.agent_id ?? existing.agent_id,
+    mode: patch.mode ?? existing.mode,
     updated_at: patch.updated_at ?? existing.updated_at,
   };
   writeBacklogState(state);
 }
+
+// agent identity — `--agent <id>` wins, then PB_AGENT_ID env, then default "agent".
+// This is the field that lets N agents share one backlog (track B).
+function resolveAgentId(args = {}) {
+  if (args && typeof args.agent === 'string' && args.agent.trim()) return args.agent.trim();
+  const env = process.env.PB_AGENT_ID;
+  if (typeof env === 'string' && env.trim()) return env.trim();
+  return 'agent';
+}
+// Which agent holds a task. Unstamped (legacy) tasks attribute to the default
+// agent "agent" — consistent with resolveAgentId's fallback — so single-agent
+// "one at a time" is preserved while named agents are not blocked by orphans.
+function taskHolder(t) {
+  return (t && (t.claimed_by || t.agent_id)) || 'agent';
+}
+
+// --- claim lock (multi-agent) ----------------------------------------------
+// Atomic claim primitive: an O_EXCL lockfile serializes the claim's
+// read-verify-write so two agents can't grab the same task. Carry-on: just a
+// file, no daemon/DB. `wx` = create-exclusive; EEXIST means another holder.
+function busySleepMs(ms) {
+  // synchronous sleep with no deps — block this thread briefly between retries.
+  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
+  catch { /* SharedArrayBuffer unavailable: spin */ const end = Date.now() + ms; while (Date.now() < end) {} }
+}
+function acquireLock(lockPath, { timeoutMs = 5000, staleMs = 60000 } = {}) {
+  const start = Date.now();
+  for (;;) {
+    try {
+      const fd = openSync(lockPath, 'wx');
+      writeFileSync(fd, JSON.stringify({ pid: process.pid, ts: nowISO() }));
+      closeSync(fd);
+      return true;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      // break a stale lock left by a dead/abandoned process.
+      try {
+        const st = statSync(lockPath);
+        if (Date.now() - st.mtimeMs > staleMs) { try { unlinkSync(lockPath); continue; } catch { /* raced */ } }
+      } catch { /* lock vanished — retry immediately */ }
+      if (Date.now() - start > timeoutMs) return false;
+      busySleepMs(20);
+    }
+  }
+}
+function releaseLock(lockPath) { try { unlinkSync(lockPath); } catch { /* already gone */ } }
 
 function backlogTasks() {
   const bl = readData(BACKLOG);
@@ -207,6 +284,9 @@ function backlogTasks() {
       status: s.status ?? t.status,
       loop_id: s.loop_id ?? t.loop_id,
       claimed_at: s.claimed_at ?? t.claimed_at,
+      claimed_by: s.claimed_by ?? t.claimed_by,
+      agent_id: s.agent_id ?? t.agent_id,
+      mode: s.mode ?? t.mode,
       updated_at: s.updated_at ?? t.updated_at,
     };
   });
@@ -413,9 +493,39 @@ function parseArgs(argv) {
 }
 
 const prio = (t) => (typeof t.priority === 'number' ? t.priority : 100);
+// --- pack-composable index resolution (Stage 2) ----------------------------
+// Skills/processes resolve from the ENGINE globals UNION the ACTIVE MODE's
+// pack-local indices. Engine ids win on collision (packs are additive, never
+// override). coding's pointers equal the global files, so its union == globals
+// == no change. A pack that points its skills_index/processes_index at its own
+// files (under modes/<id>/) contributes those entries only while it is active.
+function activeModeIndexPath(key) {
+  const doc = loadMode(resolveModeId());
+  const rel = doc && typeof doc[key] === 'string' && doc[key].trim() ? doc[key].trim() : null;
+  return rel;
+}
+function mergeIndexEntries(globalPath, modePath, listKey) {
+  const entries = [];
+  const seen = new Set();
+  const push = (list) => {
+    for (const e of list || []) {
+      if (!e || !e.id || seen.has(e.id)) continue; // engine/first wins; additive for new ids
+      seen.add(e.id);
+      entries.push(e);
+    }
+  };
+  push(readData(globalPath)?.[listKey]);                 // engine globals first
+  if (modePath && modePath !== globalPath) push(readData(modePath)?.[listKey]); // then pack-local
+  return entries;
+}
+function resolvedSkillEntries() {
+  return mergeIndexEntries(SKILL_INDEX, activeModeIndexPath('skills_index'), 'skills');
+}
+function resolvedProcessEntries() {
+  return mergeIndexEntries(PROCESS_INDEX, activeModeIndexPath('processes_index'), 'processes');
+}
 function skillFor(skillId) {
-  const idx = readData(SKILL_INDEX);
-  return (idx?.skills || []).find((s) => s.id === skillId) || null;
+  return resolvedSkillEntries().find((s) => s.id === skillId) || null;
 }
 function unmetDeps(task, tasks) {
   const deps = Array.isArray(task.dependencies) ? task.dependencies : [];
@@ -456,7 +566,7 @@ function runChecks(task) {
     if (!parts.length) continue;
     const [file, ...argv] = parts;
     try {
-      execFileSync(resolveExecutable(file), argv, { cwd: ROOT, stdio: 'pipe', timeout: 120000 });
+      runCommandSync(file, argv, { cwd: ROOT, stdio: 'pipe', timeout: 120000 });
       results.push({ cmd, ok: true });
     } catch (e) {
       const out = [e.stdout, e.stderr].filter(Boolean).map(String).join('\n').trim();
@@ -479,7 +589,7 @@ function runCommands(task) {
     if (!parts.length) continue;
     const [file, ...argv] = parts;
     try {
-      execFileSync(resolveExecutable(file), argv, { cwd: ROOT, stdio: 'pipe', timeout: 120000 });
+      runCommandSync(file, argv, { cwd: ROOT, stdio: 'pipe', timeout: 120000 });
       results.push({ cmd, ok: true });
     } catch (e) {
       const out = [e.stdout, e.stderr].filter(Boolean).map(String).join('\n').trim();
@@ -495,9 +605,42 @@ function printCommandResults(results) {
   }
 }
 
+// --- mode principle checks -------------------------------------------------
+// kind:check principles declare an executable `check:` command; kind:advice are
+// anchor nudges only and NEVER run/gate. This is what keeps modes from going
+// faith-based. Commands dispatch through the Windows-safe runner (runCommandSync)
+// so `.cmd`/`.bat` shims like `npm` work (project-memory #7).
+function modeCheckPrinciples(doc) {
+  return (Array.isArray(doc?.principles) ? doc.principles : [])
+    .filter((pr) => pr && pr.kind === 'check' && typeof pr.check === 'string' && pr.check.trim());
+}
+function runModeChecks(doc) {
+  const results = [];
+  for (const pr of modeCheckPrinciples(doc)) {
+    const parts = shellSplit(pr.check);
+    if (!parts.length) continue;
+    const [file, ...argv] = parts;
+    try {
+      runCommandSync(file, argv, { cwd: ROOT, stdio: 'pipe', timeout: 120000 });
+      results.push({ id: pr.id, cmd: pr.check, ok: true });
+    } catch (e) {
+      const out = [e.stdout, e.stderr].filter(Boolean).map(String).join('\n').trim();
+      results.push({ id: pr.id, cmd: pr.check, ok: false, output: out.split(/\r?\n/).slice(-8).join('\n') });
+    }
+  }
+  return results;
+}
+function printModeCheckResults(results) {
+  for (const r of results) {
+    console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  [${r.id}] ${r.cmd}`);
+    if (!r.ok && r.output) console.log(r.output.split(/\r?\n/).map((l) => `        ${l}`).join('\n'));
+  }
+}
+
 // ============================================================================
 //  validate — guardrails. No args: structural (master, indices, files, backlog,
 //  journal). --task <id>: run that task's executable acceptance_checks.
+//  --mode: also run the active mode's kind:check principles.
 //  Exit 1 on any failure.
 // ============================================================================
 function runValidate() {
@@ -512,20 +655,22 @@ function runValidate() {
   }
   ok(exists(ENTRY), `entry file does not exist: ${ENTRY}`);
 
-  // 2. processes index + each referenced process file
+  // 2. processes index (global must parse) + each referenced process file in the
+  //    resolved union (engine globals ∪ active-mode pack-local).
   const pidx = readData(PROCESS_INDEX);
   ok(pidx, `Missing or unparseable process index: ${PROCESS_INDEX}`);
   const processIds = new Set();
-  for (const proc of pidx?.processes || []) {
+  for (const proc of resolvedProcessEntries()) {
     ok(proc.id, `A process entry in ${PROCESS_INDEX} is missing an id`);
     if (proc.id) processIds.add(proc.id);
     ok(proc.file && exists(proc.file), `Process file missing: ${proc.file} (id: ${proc.id})`);
   }
 
-  // 3. skills index + each skill file + each process ref resolves (by id or path)
+  // 3. skills index (global must parse) + each skill file + each process ref
+  //    resolves (by id or path), over the resolved union.
   const sidx = readData(SKILL_INDEX);
   ok(sidx, `Missing or unparseable skill index: ${SKILL_INDEX}`);
-  for (const sk of sidx?.skills || []) {
+  for (const sk of resolvedSkillEntries()) {
     ok(sk.id, `A skill entry in ${SKILL_INDEX} is missing an id`);
     ok(sk.file && exists(sk.file), `Skill file missing: ${sk.file} (id: ${sk.id})`);
     if (sk.process) {
@@ -651,6 +796,21 @@ function cmdValidate(args) {
     console.log('Add task-specific acceptance_checks that test the work itself. Run \`node scripts/check-hollow.mjs .\` for details.');
     if (args.strict) { console.error('\nFailing (--strict): hollow gates on actionable tasks.'); process.exit(1); }
   }
+
+  // --mode: also run the active mode's kind:check principles. Opt-in so plain
+  // `pb validate` stays structural-only (and non-recursive: a check principle may
+  // itself invoke `pb validate`, but never `pb validate --mode`).
+  if (args.mode) {
+    const id = resolveModeId();
+    const doc = loadMode(id);
+    const checks = doc ? modeCheckPrinciples(doc) : [];
+    if (checks.length) {
+      console.log(`\nRunning ${checks.length} kind:check principle(s) for mode "${id}":`);
+      const results = runModeChecks(doc);
+      printModeCheckResults(results);
+      if (results.some((r) => !r.ok)) { console.error(`\nMode "${id}" check FAILED.`); process.exit(1); }
+    }
+  }
 }
 
 // ============================================================================
@@ -697,8 +857,17 @@ function cmdStatus() {
 // ============================================================================
 function cmdNext(args) {
   const tasks = backlogTasks();
+  // mode routing: an agent of mode M claims only tasks tagged mode M, plus
+  // UNTAGGED tasks (claimable by any mode, so the common case is never starved).
+  // The claiming mode is `--mode <id>` if given (lets pooled agents self-specify),
+  // else the resolved mode (loop.mode ?? default_mode).
+  const agentMode = (typeof args.mode === 'string' && args.mode.trim()) ? args.mode.trim() : resolveModeId();
+  const matchesMode = (t) => {
+    const tm = (t.mode && String(t.mode).trim()) || null;
+    return !tm || !agentMode || tm === agentMode;
+  };
   const todo = tasks.filter((t) => t.status === 'todo');
-  const claimable = todo.filter((t) => unmetDeps(t, tasks).length === 0);
+  const claimable = todo.filter((t) => matchesMode(t) && unmetDeps(t, tasks).length === 0);
   const candidate = claimable.sort((a, b) => prio(a) - prio(b))[0];
 
   if (!candidate) {
@@ -706,8 +875,15 @@ function cmdNext(args) {
       console.log(`No actionable tasks (nothing in "todo"). Add one to ${BACKLOG}.`);
       return;
     }
+    // distinguish "nothing for my mode" from "blocked by deps".
+    const todoForMode = todo.filter(matchesMode);
+    if (!todoForMode.length) {
+      console.log(`No todo tasks match mode "${agentMode || '(none)'}". ${todo.length} task(s) are tagged for other modes.`);
+      for (const t of todo) console.log(`  [${t.id}] mode: ${(t.mode && String(t.mode).trim()) || '(untagged)'}`);
+      return;
+    }
     console.log('No claimable todo tasks. Blockers:');
-    for (const t of todo) {
+    for (const t of todoForMode) {
       const deps = unmetDeps(t, tasks);
       if (deps.length) console.log(`  [${t.id}] waiting on: ${deps.join(', ')}`);
     }
@@ -736,8 +912,14 @@ function cmdNext(args) {
     const journal = readJournal().filter((e) => !e.__malformed);
     const blockers = [];
     if (!loop) blockers.push('No active loop — run `pb loop new` before claiming work.');
-    const wip = tasks.find((t) => t.status === 'in_progress');
-    if (wip) blockers.push(`Task [${wip.id}] is already in_progress. Finish or record it blocked before claiming another.`);
+    // one-in-progress is PER AGENT, not global: N agents share one backlog, so a
+    // task held by ANOTHER agent must not block this agent. Attribution falls back
+    // to the default agent id, so legacy/unstamped in_progress still blocks `agent`.
+    const agent = resolveAgentId(args);
+    const myWip = tasks.find((t) => t.status === 'in_progress' && taskHolder(t) === agent);
+    if (myWip) blockers.push(`You (agent ${agent}) already hold [${myWip.id}] in_progress. Finish or release it before claiming another.`);
+    // (The cycle-brief / phase blockers below stay SHARED on purpose — all agents
+    // work one phase; they are set per-phase and don't serialize concurrent agents.)
     blockers.push(...cycleBlockers(journal));
     if (blockers.length && !args.force) {
       console.log(`\n  Refusing to claim [${candidate.id}] — phase-loop guardrail gap:`);
@@ -746,12 +928,39 @@ function cmdNext(args) {
       console.log('');
       process.exit(1);
     }
-    updateBacklogState(candidate.id, {
-      status: 'in_progress',
-      claimed_at: nowISO(),
-      loop_id: loop ? loop.id : undefined,
-    });
-    console.log(`\n  Claimed [${candidate.id}] → in_progress.`);
+    // resolve the mode for THIS candidate (it isn't in_progress yet, so resolve directly):
+    // task.mode ?? loop.mode ?? default_mode.
+    const claimMode = (candidate.mode && String(candidate.mode).trim()) || (loop && loop.mode) || DEFAULT_MODE || undefined;
+    // ATOMIC claim: serialize read-verify-write under an O_EXCL lock so two agents
+    // racing for the same task resolve to exactly one winner. The candidate was
+    // chosen BEFORE the lock; re-verify it is still todo inside the critical section.
+    const lockPath = p(BACKLOG_STATE) + '.lock';
+    if (!acquireLock(lockPath)) {
+      console.error(`\n  Could not acquire the claim lock (another agent is claiming). Re-run \`pb next --claim\`.`);
+      process.exit(1);
+    }
+    let claimed = false;
+    try {
+      const fresh = backlogTasks().find((t) => t.id === candidate.id);
+      if (fresh && fresh.status === 'todo') {
+        updateBacklogState(candidate.id, {
+          status: 'in_progress',
+          claimed_at: nowISO(),
+          loop_id: loop ? loop.id : undefined,
+          claimed_by: agent,
+          agent_id: agent,
+          mode: claimMode,
+        });
+        claimed = true;
+      }
+    } finally {
+      releaseLock(lockPath);
+    }
+    if (!claimed) {
+      console.error(`\n  [${candidate.id}] was claimed by another agent while you were selecting. Re-run \`pb next --claim\` for the next task.`);
+      process.exit(1);
+    }
+    console.log(`\n  Claimed [${candidate.id}] → in_progress  (agent: ${agent}, mode: ${claimMode || 'none'}).`);
     if (loop) console.log(`  Loop: ${loop.id}`);
     if (blockers.length) console.log(`  WARNING: claimed with --force despite ${blockers.length} guardrail gap(s).`);
     console.log(`  Next: do the work via the skill, then \`pb record --task ${candidate.id} ...\`.`);
@@ -867,11 +1076,17 @@ function cmdRecord(args) {
     }
   }
 
+  const agentId = resolveAgentId(args);
+  const claimRecord = readBacklogState()[args.task] || {};
   const entry = {
     ts: nowISO(),
     loop_id: loopId,
     task: args.task,
-    agent: args.agent || 'agent',
+    agent: agentId,
+    // multi-agent + modes provenance on every journal row:
+    agent_id: agentId,
+    claimed_by: claimRecord.claimed_by || agentId,
+    mode: claimRecord.mode || resolveModeId() || undefined,
     action: args.action,
     status: args.status,
     checks: checksOutcome,
@@ -1015,9 +1230,15 @@ function cmdLoopRunAuto(args) {
   const maxTasks = Number(args['max-tasks']) || Infinity;
   const retry = Number(args.retry) || 3;
   const dryRun = args['dry-run'];
+  // --defer-blocked: keep going past a faulted task instead of stopping the whole
+  // run. A blocked task drops out of the `todo` filter, so the run naturally ends
+  // when nothing claimable remains. If anything was deferred, the terminal status
+  // is `stalled` (not `done`) — done is still earned only by passing checks.
+  const defer = !!args['defer-blocked'];
   let tasksCompleted = 0;
+  let deferred = 0;
   let finalStatus = 'done';
-  console.log(`\nStarting autonomous run for [${loop.id}] (max-tasks=${maxTasks === Infinity ? 'unlimited' : maxTasks}, retry=${retry})${dryRun ? ' [DRY RUN]' : ''}\n`);
+  console.log(`\nStarting autonomous run for [${loop.id}] (max-tasks=${maxTasks === Infinity ? 'unlimited' : maxTasks}, retry=${retry}${defer ? ', defer-blocked' : ''})${dryRun ? ' [DRY RUN]' : ''}\n`);
   while (tasksCompleted < maxTasks) {
     const tasks = backlogTasks();
     const todo = tasks.filter((t) => t.status === 'todo');
@@ -1028,6 +1249,12 @@ function cmdLoopRunAuto(args) {
       break;
     }
     if (candidate.manual) {
+      if (defer) {
+        recordAuto(loop, candidate, 'blocked', 'none', 'Deferred: marked manual, requires human approval.');
+        console.log(`[${candidate.id}] → blocked (manual, deferred)`);
+        deferred++;
+        continue;
+      }
       console.log(`Stopping auto run: [${candidate.id}] is marked manual and requires human approval.`);
       finalStatus = 'blocked';
       break;
@@ -1035,6 +1262,12 @@ function cmdLoopRunAuto(args) {
     const cmds = taskCommands(candidate);
     const checks = taskChecks(candidate);
     if (!cmds.length && !checks.length) {
+      if (defer) {
+        recordAuto(loop, candidate, 'blocked', 'none', 'Deferred: no executable commands or checks (honor-only).');
+        console.log(`[${candidate.id}] → blocked (honor-only, deferred)`);
+        deferred++;
+        continue;
+      }
       console.log(`Stopping auto run: [${candidate.id}] has no executable commands or checks (honor-only).`);
       finalStatus = 'blocked';
       break;
@@ -1056,6 +1289,7 @@ function cmdLoopRunAuto(args) {
       const failed = cmdResults.find((r) => !r.ok);
       recordAuto(loop, candidate, 'blocked', 'none', `Auto-run command failed: ${failed.cmd}`);
       console.error(`[${candidate.id}] → blocked (command failed)`);
+      if (defer) { deferred++; continue; }
       finalStatus = 'blocked';
       break;
     }
@@ -1074,12 +1308,16 @@ function cmdLoopRunAuto(args) {
     } else {
       recordAuto(loop, candidate, 'blocked', 'failed', `Auto-run acceptance checks failed after ${retry} retries.`);
       console.error(`[${candidate.id}] → blocked (checks failed)`);
+      if (defer) { deferred++; continue; }
       finalStatus = 'blocked';
       break;
     }
   }
-  console.log(`\nAutonomous run finished. ${tasksCompleted} task(s) completed.`);
-  if (tasksCompleted > 0 || finalStatus === 'blocked') {
+  // In defer mode the run never breaks on a fault, so finalStatus is still 'done'
+  // here. If anything was deferred, the backlog did not fully drain — say so.
+  if (defer && deferred > 0 && finalStatus === 'done') finalStatus = 'stalled';
+  console.log(`\nAutonomous run finished. ${tasksCompleted} task(s) completed${deferred ? `, ${deferred} deferred (blocked)` : ''}. Status: ${finalStatus}.`);
+  if (tasksCompleted > 0 || finalStatus === 'blocked' || deferred > 0) {
     try { cmdReport(args); } catch { /* report is best-effort */ }
   }
 }
@@ -1308,9 +1546,8 @@ function cmdRun(args) {
   const outRel = loopArtifactsRel(loop.id, 'logs', `${stamp}-${safe}.out.log`);
   const errRel = loopArtifactsRel(loop.id, 'logs', `${stamp}-${safe}.err.log`);
   ensureDir(dirname(outRel));
-  const child = spawn(resolveExecutable(file), argv, {
+  const child = spawnCommand(file, argv, {
     cwd: ROOT,
-    shell: false,
     detached: true,
     windowsHide: true,
     stdio: ['ignore', openSync(p(outRel), 'a'), openSync(p(errRel), 'a')],
@@ -1427,15 +1664,14 @@ function cmdReport(args) {
 // ============================================================================
 function cmdList(args) {
   const which = args._[0];
+  const mode = resolveModeId();
   if (!which || which === 'processes') {
-    const idx = readData(PROCESS_INDEX);
-    console.log('\nProcesses:');
-    for (const x of idx?.processes || []) console.log(`  ${String(x.id).padEnd(18)} ${x.file}${x.owner ? `  (${x.owner})` : ''}`);
+    console.log(`\nProcesses (mode: ${mode || 'none'}):`);
+    for (const x of resolvedProcessEntries()) console.log(`  ${String(x.id).padEnd(18)} ${x.file}${x.owner ? `  (${x.owner})` : ''}`);
   }
   if (!which || which === 'skills') {
-    const idx = readData(SKILL_INDEX);
-    console.log('\nSkills:');
-    for (const x of idx?.skills || []) console.log(`  ${String(x.id).padEnd(18)} ${x.file}${x.process ? `  → ${x.process}` : ''}`);
+    console.log(`\nSkills (mode: ${mode || 'none'}):`);
+    for (const x of resolvedSkillEntries()) console.log(`  ${String(x.id).padEnd(18)} ${x.file}${x.process ? `  → ${x.process}` : ''}`);
   }
   console.log('');
 }
@@ -1647,6 +1883,117 @@ Steps:
 //  decays out of attention. `--brief` is a few lines safe to inject every turn.
 //  Designed to be called from runtime hooks; never throws.
 // ============================================================================
+// ============================================================================
+//  modes — resolve the active persona pack and render its anchor slice. A mode
+//  NEVER weakens the floor; it only adds a `directive` (persona) + principles.
+//  Resolution: task.mode (the in_progress task) ?? loop.mode (active loop) ??
+//  master.default_mode. An empty directive is intentional and NON-BLOCKING:
+//  it means "inherit the host agent's system prompt".
+// ============================================================================
+function loadMode(id) {
+  if (!id || !(id in MODES)) return null;
+  try {
+    const doc = readData(MODES[id]);
+    return doc && typeof doc === 'object' ? doc : null;
+  } catch { return null; }
+}
+function resolveModeId() {
+  const wip = backlogTasks().find((t) => t.status === 'in_progress');
+  if (wip && typeof wip.mode === 'string' && wip.mode.trim()) return wip.mode.trim();
+  const loop = activeLoop();
+  if (loop && typeof loop.mode === 'string' && loop.mode.trim()) return loop.mode.trim();
+  return DEFAULT_MODE;
+}
+function modeHasDirective(doc) {
+  return !!(doc && typeof doc.directive === 'string' && doc.directive.trim());
+}
+// One tiny additive line for the anchor (brief + full both start with this).
+function modeAnchorLine(id, doc) {
+  if (!id) return 'Mode: (none — set `default_mode` in the master or run `pb mode set <id>`)';
+  if (!doc) return `Mode: ${id} (UNREGISTERED — not in the modes registry)`;
+  const names = Array.isArray(doc.principles) ? doc.principles.map((pr) => pr.id).filter(Boolean) : [];
+  const tail = names.length ? ` · principles: ${names.join(', ')}` : '';
+  const persona = modeHasDirective(doc) ? '' : ' · directive: inherits host prompt';
+  return `Mode: ${id}${tail}${persona}`;
+}
+
+function cmdMode(args) {
+  const sub = args._[0] || 'show';
+  if (sub === 'show') {
+    const id = resolveModeId();
+    const doc = loadMode(id);
+    console.log(`\nActive mode: ${id || '(none)'}`);
+    if (!id) {
+      console.log('No `default_mode` in the master and no loop/task override. Set one with `pb mode set <id>`.\n');
+      return;
+    }
+    if (!doc) {
+      console.log(`(UNREGISTERED — "${id}" is not in the modes registry: ${Object.keys(MODES).join(', ') || 'none'})\n`);
+      return;
+    }
+    if (doc.description) console.log(`Description: ${String(doc.description).replace(/\s+/g, ' ').trim()}`);
+    if (modeHasDirective(doc)) {
+      console.log('Directive:');
+      console.log(doc.directive.trim().split('\n').map((l) => `  ${l}`).join('\n'));
+    } else {
+      // Empty directive is intended and non-blocking — report, never gate.
+      console.log("Directive: (empty by intent — inherits the host agent's system prompt)");
+    }
+    const prs = Array.isArray(doc.principles) ? doc.principles : [];
+    if (prs.length) {
+      console.log('Principles:');
+      for (const pr of prs) {
+        const c = pr.kind === 'check' ? ` (check: ${pr.check})` : '';
+        console.log(`  - [${pr.kind}] ${pr.id}${c} — ${pr.text || ''}`);
+      }
+    }
+    console.log(`Resolved via: task.mode ?? loop.mode ?? default_mode (${DEFAULT_MODE || 'unset'})\n`);
+    return;
+  }
+  if (sub === 'check') {
+    const id = resolveModeId();
+    const doc = loadMode(id);
+    if (!doc) {
+      console.error(`No registered mode to check (resolved: ${id || 'none'}).`);
+      process.exit(1);
+    }
+    const checks = modeCheckPrinciples(doc);
+    if (!checks.length) {
+      console.log(`Mode "${id}": no kind:check principles (advice-only) — nothing to gate. OK.`);
+      return;
+    }
+    console.log(`Running ${checks.length} kind:check principle(s) for mode "${id}":`);
+    const results = runModeChecks(doc);
+    printModeCheckResults(results);
+    if (results.some((r) => !r.ok)) {
+      console.error(`\nMode "${id}" check FAILED.`);
+      process.exit(1);
+    }
+    console.log(`Mode "${id}" checks passed.`);
+    return;
+  }
+  if (sub === 'set') {
+    const id = args._[1] || (typeof args.mode === 'string' ? args.mode : null);
+    if (!id) { console.error('Usage: pb mode set <id>'); process.exit(1); }
+    if (!(id in MODES)) {
+      console.error(`Unknown mode "${id}". Registered: ${Object.keys(MODES).join(', ') || 'none'}`);
+      process.exit(1);
+    }
+    const state = readLoops();
+    const loop = state.active ? state.loops.find((l) => l.id === state.active && l.status === 'active') : null;
+    if (!loop) {
+      console.error('No active loop to scope the mode to. Open one with `pb loop new`, or rely on `default_mode`.');
+      process.exit(1);
+    }
+    loop.mode = id;
+    writeLoops(state);
+    console.log(`Mode set: ${id} (scoped to loop ${loop.id}).`);
+    return;
+  }
+  console.error('Usage: pb mode <show | set <id>>');
+  process.exit(1);
+}
+
 function cmdAnchor(args) {
   const name = master.name || 'playbook';
   const loopDesc = master.loop?.description || 'orient → select → act → verify → record → report';
@@ -1662,6 +2009,10 @@ function cmdAnchor(args) {
   const highLessons = openLessons().filter((l) => l.severity === 'high').length;
   const lessonLine = `Lessons: ${highLessons} open high-severity · run \`pb learn status\``;
   const memRule = 'Memory precedence: your own/host memory is the PAST; this folder is the project PRESENT/FUTURE. On any project conflict the folder wins — surface it, do not silently follow host memory.';
+  // Mode slice — ONE additive line (never gates; empty directive = inherit host prompt).
+  const _modeId = resolveModeId();
+  const _modeDoc = loadMode(_modeId);
+  const _modeLine = modeAnchorLine(_modeId, _modeDoc);
 
   if (args.brief) {
     console.log(`[${name} anchor] master=${MASTER} · loop: ${loopDesc}`);
@@ -1669,6 +2020,7 @@ function cmdAnchor(args) {
     console.log(cycleLine);
     console.log(loopLine);
     console.log(lessonLine);
+    console.log(_modeLine);
     console.log(`Re-anchor to ${MASTER} each iteration. State is on disk (${BACKLOG}, ${JOURNAL}) — rehydrate with \`node scripts/pb.mjs status\`. ${memRule}`);
     return;
   }
@@ -1679,6 +2031,17 @@ function cmdAnchor(args) {
   console.log(loopLine);
   console.log(lessonLine);
   console.log(`Loop: ${loopDesc}`);
+  console.log(_modeLine);
+  if (_modeDoc) {
+    if (modeHasDirective(_modeDoc)) {
+      console.log('  directive:');
+      for (const l of _modeDoc.directive.trim().split('\n')) console.log(`    ${l}`);
+    } else {
+      console.log("  directive: (empty by intent — inherits the host agent's system prompt)");
+    }
+    const _prs = Array.isArray(_modeDoc.principles) ? _modeDoc.principles : [];
+    for (const pr of _prs) console.log(`  - [${pr.kind}] ${pr.id} — ${pr.text || ''}`);
+  }
   const fix = master.fixation || [];
   if (fix.length) {
     console.log('Invariants (never violate):');
@@ -1729,7 +2092,13 @@ function cmdCheckpoint(args) {
   if (unscoped) warnings.push(`${unscoped} post-loop journal entr${unscoped === 1 ? 'y has' : 'ies have'} no loop_id.`);
   const nonActiveLive = latestProcessRecords().filter((proc) => proc.loop_id !== loop?.id && proc.status !== 'stopped' && pidAlive(proc.pid));
   if (nonActiveLive.length) warnings.push(`${nonActiveLive.length} live tracked process(es) belong to a non-active loop.`);
-  if (wip.length > 1) warnings.push(`${wip.length} tasks in_progress — keep ONE at a time; finish or release the rest.`);
+  // multi-agent: "one at a time" is per agent. Warn only when a SINGLE agent holds
+  // more than one in_progress task; multiple agents each holding one is expected.
+  const wipByAgent = new Map();
+  for (const t of wip) wipByAgent.set(taskHolder(t), (wipByAgent.get(taskHolder(t)) || 0) + 1);
+  for (const [ag, n] of wipByAgent) {
+    if (n > 1) warnings.push(`agent ${ag} holds ${n} tasks in_progress — keep ONE per agent; finish or release the rest.`);
+  }
   for (const t of wip) {
     const recorded = journal.some((e) => e.task === t.id && (!t.claimed_at || (e.ts || '') >= t.claimed_at));
     if (!recorded) warnings.push(`[${t.id}] claimed but no progress recorded — \`pb record --task ${t.id} ...\` or release it.`);
@@ -2031,6 +2400,7 @@ switch (cmd) {
   case 'ps': cmdPs(args); break;
   case 'stop': cmdStop(args); break;
   case 'validate': cmdValidate(args); break;
+  case 'mode': cmdMode(args); break;
   case 'anchor': cmdAnchor(args); break;
   case 'checkpoint': cmdCheckpoint(args); break;
   case 'cycle': cmdCycle(args); break;

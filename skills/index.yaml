@@ -25,3 +25,8 @@ skills:
     file: skills/release/SKILL.md
     process: release
     summary: Cut a versioned release — bump, tag, push, publish GitHub release.
+
+  - id: nl
+    file: skills/nl/SKILL.md
+    process: use-playbook
+    summary: Drive the playbook from natural language — map an utterance to intent and pb commands via scripts/lib/nl-router.mjs.

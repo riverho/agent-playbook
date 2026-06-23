@@ -1,4 +1,4 @@
-active: null
+active: loop-20260622-001
 loops:
   - id: loop-20260617-001
     status: done
@@ -11,3 +11,42 @@ loops:
       last_line: 5
     artifacts: artifacts\loops\loop-20260617-001
     reason: v0.3 implementation verified by npm test and pb validate
+  - id: loop-20260621-001
+    status: done
+    started_at: '2026-06-21T03:54:04.746Z'
+    closed_at: '2026-06-22T17:19:01.160Z'
+    goal: >-
+      Fix Windows .cmd/.bat shim + spaces-in-path execution in the runner; add durable rules; cover
+      pb run -- background path.
+    stop: >-
+      3 tasks recorded done; new self-test green on Windows; project-memory rules added; pb validate
+      green.
+    journal:
+      first_line: 6
+      last_line: 18
+    artifacts: artifacts/loops/loop-20260621-001
+    reason: >-
+      Windows runner hardening + OpenCode adapter + NL skill epoch complete; opening a fresh epoch
+      for the multi-agent + modes architecture.
+  - id: loop-20260622-001
+    status: active
+    started_at: '2026-06-22T17:19:12.277Z'
+    closed_at: null
+    goal: >-
+      Make the playbook multi-agent and mode-aware. (1) MODE feature: inject a per-task/per-loop
+      persona 'directive' (system-prompt text) atop the invariant floor; ship 'coding' as the FIRST
+      mode with an intentionally-EMPTY directive (empty = inherit host agent's system prompt,
+      non-blocking placeholder). (2) MULTI-AGENT floor: agent identity, per-agent WIP, atomic claim,
+      mode-routed claiming so N host-spawned agents share ONE backlog safely. The enforcement floor
+      (claim->process/skill->eval->done->cycle) stays invariant; modes never weaken it.
+    stop: >-
+      modes/coding.yaml + default_mode + 'pb mode show/set' + anchor mode-line (ONE line in
+      --brief); agent_id/mode/claimed_by stamped on claims+journal; per-agent WIP; atomic claim
+      rejects a concurrent second claimer; mode-routed claiming; every task checker .mjs green; pb
+      validate green; recorded done; reflect run.
+    journal:
+      first_line: 19
+      last_line: null
+    artifacts: artifacts/loops/loop-20260622-001
+    reason: null
+    mode: coding

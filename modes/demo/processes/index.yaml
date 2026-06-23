@@ -1,0 +1,5 @@
+# Pack-local process index for the demo pack. Registered ONLY here.
+processes:
+  - id: demo-proc
+    file: modes/demo/processes/demo-proc.yaml
+    owner: demo

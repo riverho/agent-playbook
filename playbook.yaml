@@ -13,7 +13,7 @@
 # ============================================================================
 
 name: agent-playbook
-version: 0.3.1
+version: 0.3.2
 description: >-
   A portable, agent-first playbook. Agents loop without friction: orient on the
   master, pick a task, run the matching skill/process, verify with executable
@@ -85,6 +85,22 @@ index:
     reports: artifacts/reports                 # human-facing rollups (generated)
 
 # ----------------------------------------------------------------------------
+# modes — persona packs mounted ON the invariant floor. A mode injects a
+# `directive` (persona text) + style `principles` through the anchor; it NEVER
+# weakens enforcement. The floor (claim -> process/skill -> eval -> done ->
+# cycle) is invariant — there is no mode that skips acceptance_checks.
+# `default_mode` is the mode in effect when a task/loop names none.
+# Resolution order: task.mode ?? loop.mode ?? default_mode.
+# coding is the first/reference mode; its directive is empty (= inherit host prompt).
+# ----------------------------------------------------------------------------
+default_mode: coding
+modes:
+  coding: modes/coding.yaml
+  # demo — a second pack that mounts purely from YAML (its own skill + process under
+  # modes/demo/). The existence proof that a non-coding pack needs ZERO engine change.
+  demo: modes/demo.yaml
+
+# ----------------------------------------------------------------------------
 # loop — the friction-free contract. One command per step. SKILL.md expands this.
 # ----------------------------------------------------------------------------
 loop:
@@ -142,6 +158,14 @@ hardening:
       SessionStart: node scripts/pb.mjs anchor
       UserPromptSubmit: node scripts/pb.mjs anchor --brief
       PreCompact: node scripts/pb.mjs checkpoint --snapshot
+    opencode:
+      note: >-
+        Implemented by the adapter plugin in adapters/opencode/. OpenCode owns the
+        cadence (session.idle); the playbook owns the contract (pb checks). The plugin
+        drives `pb loop run --auto --defer-blocked` on idle — see adapters/opencode/README.md.
+      session.created: node scripts/pb.mjs anchor
+      session.idle: node scripts/pb.mjs checkpoint
+      experimental.session.compacting: node scripts/pb.mjs anchor --brief
     other_runtimes: Wrap each turn with `node scripts/pb.mjs anchor --brief`; on resume run checkpoint.
 
 # ----------------------------------------------------------------------------
