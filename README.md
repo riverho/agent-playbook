@@ -1,5 +1,7 @@
 # Agent-Playbook
 
+Current engine release: **v0.3.3**.
+
 > **Done is an exit code, not prose.** The kernel is a `pb record --status done` that re-runs each
 > task's `acceptance_checks` (shell commands) and *refuses* on failure. Anchoring, the North Star
 > (`north_star`), the cycle brief, and carry-on portability all *support* that verification gate —
@@ -37,6 +39,37 @@ skills/            Short "how-to"s that route to processes (+ index.yaml)
 memory/            project-memory.md · backlog.yaml · journal.ndjson  (durable, agent-first)
 artifacts/reports/ Generated human-facing rollups
 ```
+
+## v0.3.3: conformance-first project intake
+
+When a project starts from an approved visual design, establish the design contract **before broad
+implementation-oriented codebase analysis**. Otherwise, legacy files and nearby examples can
+silently redefine the approved design before the agent has a stable reference.
+
+Choose the coding-pack adapter that matches the source:
+
+| Approved source | Skill | Source identity |
+| --- | --- | --- |
+| Pencil mockups via MCP | `$pencil-design-layout-conformance` | Pencil file/frame/node IDs + approved screenshots |
+| Canonical HTML mockup | `$html-design-layout-conformance` | HTML entry point + checksum + stable `data-design-id` anchors |
+
+The intake order is:
+
+1. Approve `DESIGN.md` and the Pencil or HTML source, including required viewports and UI states.
+2. Invoke the matching conformance skill and create `design-contract.yaml` from the **design
+   source only**: provenance, states, viewports, semantic regions, geometry, and tolerances.
+3. Analyze the codebase **through that contract**. Inspect only what is needed to map its regions:
+   canonical component APIs, deprecated paths, compilable examples, tokens, and the existing test
+   harness. Do not mine arbitrary nearby screens to infer the intended design.
+4. Complete the component mapping, implement one golden screen, and prove the verification command
+   fails on a deliberate layout shift before restoring it.
+5. Only after the contract gate passes, implement production screen slices. Each slice must pass
+   geometry, screenshot, responsive, applicable interaction, anti-gaming, and human-attestation gates.
+
+For HTML sources, start from
+`modes/coding/skills/html-design-layout-conformance/assets/design-contract.template.yaml`.
+For Pencil sources, produce the same target-repository artifact with `source.kind: pencil` and
+stable Pencil provenance. The adapter processes are under `modes/coding/processes/`.
 
 ## Quick start
 
@@ -126,7 +159,7 @@ Promote reusable lessons into project memory, backlog tasks, or skills/processes
 ## Drop into another project
 
 ```bash
-node <engine>/scripts/pb.mjs scaffold --target <repo>/.agent-playbook
+node <engine>/scripts/pb.mjs scaffold --target <repo>/.agents-playbook
 ```
 
 Copy-don't-clobber: existing files are never overwritten (except `pb.mjs` itself, which is the

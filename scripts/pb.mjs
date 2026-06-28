@@ -23,9 +23,10 @@
 //  Only dependency: js-yaml.
 // ============================================================================
 
-import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, copyFileSync, cpSync, openSync, closeSync, statSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, copyFileSync, cpSync, openSync, closeSync, statSync, unlinkSync, rmSync, readdirSync, mkdtempSync } from 'node:fs';
 import { execSync, execFileSync, spawn } from 'node:child_process';
-import { resolve, dirname, join, isAbsolute } from 'node:path';
+import { tmpdir } from 'node:os';
+import { resolve, dirname, join, isAbsolute, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
@@ -558,6 +559,19 @@ function reportCheckMarker(entry, task) {
   const quality = task ? gateQuality(task) : '✓verified';
   return quality === '⚠hollow' ? ' ⚠hollow-checks' : ' ✓verified';
 }
+// Checks run with cwd = playbook root, so a check that names the playbook
+// folder itself (e.g. ".agents-playbook/artifacts/...") is almost certainly a
+// workspace-relative path written by an operator who expected cwd = workspace
+// root. The runner would look for ".agents-playbook/.agents-playbook/..." and
+// fail on a file that exists. Surface that before the confusing failure.
+const PLAYBOOK_DIR = ROOT.split(/[\\/]/).filter(Boolean).pop() || '';
+function checkPathWarnings(checks) {
+  if (!PLAYBOOK_DIR || !PLAYBOOK_DIR.startsWith('.')) return [];
+  // Only warn for a dot-prefixed nested install (".agents-playbook"); a bare
+  // top-level folder name like "scripts" would false-positive on real paths.
+  const needle = new RegExp(`(^|[\\s'"\`(])${PLAYBOOK_DIR.replace(/[.]/g, '\\.')}[\\\\/]`);
+  return checks.filter((c) => needle.test(c));
+}
 function runChecks(task) {
   const checks = taskChecks(task);
   const results = [];
@@ -766,6 +780,13 @@ function cmdValidate(args) {
     if (!checks.length) {
       console.log(`[${task.id}] has no acceptance_checks — verification is manual. Add executable checks to make "done" enforceable.`);
       return;
+    }
+    const suspect = checkPathWarnings(checks);
+    if (suspect.length) {
+      console.log(`\n⚠ Path warning: checks run with cwd = playbook root (this folder, "${PLAYBOOK_DIR}/").`);
+      console.log(`  These check(s) reference "${PLAYBOOK_DIR}/" — likely a workspace-relative path. Drop that prefix:`);
+      for (const c of suspect) console.log(`    ⚠  ${c}`);
+      console.log('');
     }
     console.log(`Running ${checks.length} acceptance check(s) for [${task.id}] (cwd: playbook root):`);
     const results = runChecks(task);
@@ -2296,7 +2317,7 @@ function cmdScaffold(args) {
   created.push('scripts/pb.mjs');
 
   // single-file templates — only if absent in the target
-  for (const f of ['playbook.yaml', 'SKILL.md', 'AGENTS.md', 'README.md', 'memory/project-memory.md']) {
+  for (const f of ['playbook.yaml', 'SKILL.md', 'AGENTS.md', 'README.md', 'INSTALL.md', 'memory/project-memory.md']) {
     if (!existsSync(p(f))) continue;
     if (tHas(f)) { skipped.push(f); continue; }
     ensureT(dirname(f));
@@ -2312,6 +2333,36 @@ function cmdScaffold(args) {
     else if (hasIndex) skipped.push(`${area}/ (index present — bridge, don't replace)`);
   }
 
+  // modes/ — the template playbook.yaml ships `default_mode` + a `modes:` registry
+  // pointing at modes/*.yaml; a scaffold without them resolves to a missing mode.
+  // Copy the whole tree on greenfield; leave any existing modes/ alone.
+  if (existsSync(p('modes'))) {
+    if (!tHas('modes')) { cpSync(p('modes'), tp('modes'), { recursive: true }); created.push('modes/'); }
+    else skipped.push('modes/ (present — bridge, don\'t replace)');
+  }
+
+  // package.json — the scaffolded pb needs js-yaml. Write a minimal manifest with
+  // the dep + namespaced pb scripts so `npm install` makes the target self-running.
+  // Never clobber an existing manifest (bridge into it by hand — flagged below).
+  if (!tHas('package.json')) {
+    const name = basename(targetAbs).replace(/[^a-z0-9-]/gi, '-').toLowerCase() || 'agent-playbook';
+    const pkg = {
+      name, private: true, type: 'module',
+      description: 'Agent-Playbook working instance (scaffolded engine).',
+      scripts: {
+        status: 'node scripts/pb.mjs status', next: 'node scripts/pb.mjs next',
+        validate: 'node scripts/pb.mjs validate', report: 'node scripts/pb.mjs report',
+        list: 'node scripts/pb.mjs list',
+      },
+      dependencies: { 'js-yaml': '^4.1.0' },
+      engines: { node: '>=18' },
+    };
+    writeFileSync(tp('package.json'), JSON.stringify(pkg, null, 2) + '\n', 'utf8');
+    created.push('package.json');
+  } else {
+    skipped.push('package.json (present — add js-yaml + pb scripts by hand)');
+  }
+
   // runtime files
   if (!tHas('memory/journal.ndjson')) { writeFileSync(tp('memory/journal.ndjson'), '', 'utf8'); created.push('memory/journal.ndjson'); }
   if (existsSync(p('memory/backlog.yaml')) && !tHas('memory/backlog.yaml')) { copyFileSync(p('memory/backlog.yaml'), tp('memory/backlog.yaml')); created.push('memory/backlog.yaml'); }
@@ -2323,8 +2374,136 @@ function cmdScaffold(args) {
   console.log('\nNext (the judgment steps — see the install skill):');
   console.log('  1. If processes/skills/memory already existed, bridge them: edit the target');
   console.log('     playbook.yaml `index`/`paths` to point at the existing files (don\'t use the templates).');
-  console.log('  2. Add js-yaml + pb scripts to package.json, then `npm install`.');
-  console.log(`  3. cd "${target}" && node scripts/pb.mjs init && node scripts/pb.mjs validate\n`);
+  console.log(`  2. cd "${target}" && npm install   # pulls js-yaml (skip if nested in a repo that already has it)`);
+  console.log('  3. node scripts/pb.mjs init && node scripts/pb.mjs validate\n');
+}
+
+// ============================================================================
+//  update — one-command self-update ("agent-playbook --update"). Pulls the
+//  latest engine from GitHub (or a local --source) and OVERLAYS engine files,
+//  preserving user state. Carry-on: Node 18 fetch + GitHub tree/raw API (no tar,
+//  no new deps). Engine = scripts/ processes/ skills/ modes/ + docs + package.json.
+//  NEVER touches memory/ or artifacts/. The master version line is bumped in place.
+// ============================================================================
+const UPDATE_REPO = (master.update && master.update.repo) || 'riverho/agent-playbook';
+const ENGINE_DIRS = ['scripts', 'processes', 'skills', 'modes'];
+const ENGINE_FILES = ['SKILL.md', 'AGENTS.md', 'README.md', 'INSTALL.md', 'package.json'];
+
+function parseSemver(v) {
+  const m = String(v || '').trim().replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)/);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : [0, 0, 0];
+}
+function semverCmp(a, b) {
+  const x = parseSemver(a), y = parseSemver(b);
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+  return 0;
+}
+function isEnginePath(rel) {
+  const r = rel.replace(/\\/g, '/');
+  if (ENGINE_FILES.includes(r) || r === 'playbook.yaml') return true;
+  return ENGINE_DIRS.some((d) => r === d || r.startsWith(`${d}/`));
+}
+// Overlay engine files from srcRoot onto dstRoot: additive-overwrite (refresh/add,
+// never delete user files); only descends ENGINE_DIRS, so memory/ + artifacts/ are
+// never touched. Returns the number of files written.
+function overlayEngine(srcRoot, dstRoot, { includeMaster }) {
+  let count = 0;
+  const copyTree = (relDir) => {
+    const absSrc = join(srcRoot, relDir);
+    if (!existsSync(absSrc)) return;
+    for (const ent of readdirSync(absSrc, { withFileTypes: true })) {
+      const rel = relDir ? `${relDir}/${ent.name}` : ent.name;
+      if (ent.isDirectory()) copyTree(rel);
+      else {
+        mkdirSync(dirname(join(dstRoot, rel)), { recursive: true });
+        copyFileSync(join(srcRoot, rel), join(dstRoot, rel));
+        count++;
+      }
+    }
+  };
+  for (const d of ENGINE_DIRS) copyTree(d);
+  for (const f of ENGINE_FILES) {
+    if (existsSync(join(srcRoot, f))) { copyFileSync(join(srcRoot, f), join(dstRoot, f)); count++; }
+  }
+  if (includeMaster && existsSync(join(srcRoot, 'playbook.yaml'))) {
+    copyFileSync(join(srcRoot, 'playbook.yaml'), join(dstRoot, 'playbook.yaml')); count++;
+  }
+  return count;
+}
+// Surgically bump only the `version:` line of the master — preserves comments,
+// north_star, and any user customization (unlike a full master overwrite).
+function bumpMasterVersion(version) {
+  const path = p(MASTER);
+  if (!existsSync(path)) return;
+  const text = readFileSync(path, 'utf8');
+  const next = text.replace(/^version:.*$/m, `version: ${version}`);
+  if (next !== text) writeFileSync(path, next, 'utf8');
+}
+async function ghJson(url) {
+  const res = await fetch(url, { headers: { 'User-Agent': 'agent-playbook-update', Accept: 'application/vnd.github+json' } });
+  if (!res.ok) throw new Error(`GitHub API ${res.status} for ${url}`);
+  return res.json();
+}
+// Download just the engine files at a ref into destRoot via the tree + raw APIs.
+async function downloadEngineFromGithub(repo, ref, destRoot) {
+  const tree = await ghJson(`https://api.github.com/repos/${repo}/git/trees/${ref}?recursive=1`);
+  const blobs = (tree.tree || []).filter((n) => n.type === 'blob' && isEnginePath(n.path));
+  if (!blobs.length) throw new Error(`no engine files found in ${repo}@${ref}`);
+  for (const n of blobs) {
+    const res = await fetch(`https://raw.githubusercontent.com/${repo}/${ref}/${n.path}`, { headers: { 'User-Agent': 'agent-playbook-update' } });
+    if (!res.ok) throw new Error(`raw fetch ${res.status} for ${n.path}`);
+    const out = join(destRoot, n.path);
+    mkdirSync(dirname(out), { recursive: true });
+    writeFileSync(out, Buffer.from(await res.arrayBuffer()));
+  }
+  return destRoot;
+}
+
+async function cmdUpdate(args) {
+  const current = master.version || '0.0.0';
+  const sourceArg = typeof args.source === 'string' ? args.source : null;
+  const localSource = sourceArg && existsSync(resolve(process.cwd(), sourceArg)) ? resolve(process.cwd(), sourceArg) : null;
+  let tmp = null;
+  try {
+    let srcRoot = localSource, latest, origin, ref = null, repo = null;
+    if (localSource) {
+      origin = `local source ${localSource}`;
+      let sm = {}; try { sm = yaml.load(readFileSync(join(localSource, 'playbook.yaml'), 'utf8')) || {}; } catch { /* version stays 0 */ }
+      latest = sm.version || '0.0.0';
+    } else {
+      repo = sourceArg || UPDATE_REPO;
+      origin = `github:${repo}`;
+      const rel = await ghJson(`https://api.github.com/repos/${repo}/releases/latest`);
+      ref = rel.tag_name;
+      latest = String(ref || '').replace(/^v/, '') || '0.0.0';
+    }
+
+    const cmp = semverCmp(current, latest);
+    console.log(`\n  pb update — current v${current} · latest v${latest}  (${origin})`);
+    if (args.check) {
+      console.log(cmp < 0 ? '  Update available. Run `pb update` to apply.\n' : '  Already up to date.\n');
+      return;
+    }
+    if (cmp >= 0 && !args.force) { console.log('  Already up to date.\n'); return; }
+
+    if (!srcRoot) { // GitHub path: fetch engine files into a temp dir, then overlay
+      tmp = mkdtempSync(join(tmpdir(), 'pb-update-'));
+      console.log('  Downloading engine files…');
+      await downloadEngineFromGithub(repo, ref, tmp);
+      srcRoot = tmp;
+    }
+
+    const n = overlayEngine(srcRoot, ROOT, { includeMaster: !!args['include-master'] });
+    if (!args['include-master']) bumpMasterVersion(latest);
+    console.log(`  Updated v${current} → v${latest} — ${n} engine file(s) refreshed.`);
+    console.log('  User state (memory/, artifacts/) untouched.');
+    console.log('  Next: `npm install` (if deps changed), then `node scripts/pb.mjs validate`.\n');
+  } catch (e) {
+    console.error(`\n  Update failed: ${e.message}\n`);
+    process.exitCode = 1;
+  } finally {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 // ============================================================================
@@ -2375,6 +2554,9 @@ function cmdHelp() {
     anchor [--brief]       Print the constitution to re-inject (keeps the playbook salient)
     checkpoint [--snapshot]  Heartbeat: re-anchor + detect drift; --snapshot writes memory/RESUME.md
     list [processes|skills]  Print the indices
+    update [--check] [--force] [--source <dir>] [--include-master]
+                           Self-update: pull the latest engine from GitHub (update.repo) and
+                           overlay engine files; preserves memory/ + artifacts/. --check dry-runs.
     scaffold --target <dir>  Copy this engine into another repo (copy-don't-clobber)
     init                   Create any missing runtime files (safe; never overwrites)
     bootstrap              Seed missing minimal process/skill files, then init (safe; never overwrites)
@@ -2406,6 +2588,7 @@ switch (cmd) {
   case 'cycle': cmdCycle(args); break;
   case 'reflect': cmdReflect(args); break;
   case 'list': cmdList(args); break;
+  case 'update': cmdUpdate(args); break;
   case 'scaffold': cmdScaffold(args); break;
   case 'init': cmdInit(); break;
   case 'bootstrap': cmdBootstrap(); break;

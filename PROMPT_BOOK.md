@@ -14,11 +14,11 @@ Keep this file open while you work; it is faster than typing vague natural-langu
 **When:** Drop the playbook into the repo you are currently in.
 
 ```text
-agent-playbook scaffold here at ./.agent-playbook
+agent-playbook scaffold here at ./.agents-playbook
 ```
 
 **Agent does:**
-- Run `node scripts/pb.mjs scaffold --target ./.agent-playbook`
+- Run `node scripts/pb.mjs scaffold --target ./.agents-playbook`
 - Then `node scripts/pb.mjs init`
 - Then `node scripts/pb.mjs validate`
 - Report what was created and what still needs bridging.

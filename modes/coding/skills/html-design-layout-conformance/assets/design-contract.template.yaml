@@ -1,0 +1,52 @@
+schema_version: 1
+
+source:
+  kind: html
+  entry: path/to/canonical-reference.html
+  revision: sha256:replace-with-reference-checksum
+  selector_attribute: data-design-id
+
+environment:
+  browser: pin-in-target-repository
+  device_scale_factor: 1
+  locale: en-US
+  timezone: UTC
+  fonts: []
+  fixtures: deterministic
+  animations: disabled-or-settled
+
+screens:
+  - id: replace-with-screen-id
+    reference_selector: '[data-design-id="replace-with-screen-id"]'
+    app_route: /replace-with-route
+    states:
+      - populated
+      - empty
+      - loading
+      - error
+    viewports:
+      - name: desktop
+        width: 1440
+        height: 900
+      - name: mobile
+        width: 390
+        height: 844
+    regions:
+      - id: replace-with-region-id
+        reference_selector: '[data-design-id="replace-with-region-id"]'
+        app_selector: '[data-design-id="replace-with-region-id"]'
+        component: ReplaceWithProductionComponent
+    geometry:
+      relationships: []
+      position_tolerance_px: 2
+      size_tolerance_px: 2
+    checks:
+      - static
+      - geometry
+      - screenshot
+      - responsive
+      - interaction
+
+attestation:
+  required: true
+  evidence_fields: [who, timestamp, reference_revision, note]

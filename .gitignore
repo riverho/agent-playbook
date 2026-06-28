@@ -1,7 +1,11 @@
+docs/
 node_modules/
 *.log
 .DS_Store
-.agent-playbook/
+.agents-playbook/
+
+# OpenCode adapter sandbox (vendored node_modules; not engine source)
+.opencode/
 
 # Local-only files
 2026-06-10-234302-local-command-caveatcaveat-the-messages-below.txt

@@ -2,6 +2,45 @@
 
 This is the canonical lifecycle for applying the playbook to a repository.
 
+## Local install / uninstall (the `pb` bootstrapper)
+
+Install the engine globally so the `pb` command is on your PATH. A global `pb`
+operates on its **own** package files (`ROOT = scripts/..`), so its job is to
+*bootstrap* a working playbook into a repo — not to run the loop. Run the loop
+from the per-repo `.agents-playbook/scripts/pb.mjs` that `scaffold` drops in.
+
+**PowerShell (Windows — no Git Bash required):**
+
+```powershell
+.\local-install.ps1          # install deps + link `pb`
+.\local-install.ps1 -pack    # also run a tarball smoke test
+.\local-uninstall.ps1        # tear down
+```
+
+**sh / Git Bash / Mac / Linux:**
+
+```bash
+./local-install.sh           # install deps + link `pb`
+./local-install.sh --pack    # also run a tarball smoke test
+./local-uninstall.sh         # tear down
+```
+
+Or manually:
+
+```bash
+npm install            # one dep: js-yaml
+npm link               # puts `pb` on PATH
+
+cd <repo>
+pb scaffold --target ./.agents-playbook
+cd .agents-playbook && npm install && node scripts/pb.mjs validate
+
+npm rm -g agents-playbook    # uninstall
+```
+
+`npm link` is reversible and leaves no files in your repos — it only adds the
+`pb` shim to the global npm bin. `npm rm -g agents-playbook` removes it.
+
 ## Target Location
 
 Install the working playbook inside the repository, not in agent app data.
@@ -10,7 +49,7 @@ Recommended:
 
 ```text
 repo/
-  .agent-playbook/
+  .agents-playbook/
     playbook.yaml
     SKILL.md
     scripts/pb.mjs
@@ -28,13 +67,13 @@ playbook state.
 1. **Scaffold** from the source engine into the target repo (copy-don't-clobber):
 
    ```bash
-   node <engine>/scripts/pb.mjs scaffold --target <repo>/.agent-playbook
+   node <engine>/scripts/pb.mjs scaffold --target <repo>/.agents-playbook
    ```
 
 2. **Bootstrap** if the target has structure but no usable skills/processes:
 
    ```bash
-   cd <repo>/.agent-playbook
+   cd <repo>/.agents-playbook
    node scripts/pb.mjs bootstrap
    ```
 
@@ -51,7 +90,36 @@ playbook state.
    node scripts/pb.mjs status
    ```
 
-5. **Seed real tasks** in `memory/backlog.yaml` — each with executable `acceptance_checks`
+5. **For design-led projects, establish conformance before broad codebase analysis.**
+
+   Start with approved `DESIGN.md` plus one approved visual source. Select the matching coding-pack
+   skill:
+
+   - Pencil MCP source → `$pencil-design-layout-conformance`
+   - Canonical HTML source → `$html-design-layout-conformance`
+
+   Invoke the skill before asking the agent to scan the repository for implementation patterns.
+   The first pass freezes source provenance, required states/viewports, semantic regions, geometry,
+   and tolerances in `<repo>/design-contract.yaml`. It must not infer design rules from the codebase.
+
+   For HTML, copy the bundled schema before filling it:
+
+   ```bash
+   cp .agents-playbook/modes/coding/skills/html-design-layout-conformance/assets/design-contract.template.yaml design-contract.yaml
+   ```
+
+   Then perform a **contract-guided** codebase analysis limited to:
+
+   - canonical production components and public APIs;
+   - deprecated/legacy paths that must not be used;
+   - design tokens and compilable reference examples;
+   - the compiler, browser, screenshot, and interaction-test harness.
+
+   Map each contract region to a production component, build one golden screen, and prove the
+   verification command catches a deliberate layout shift. Production screen implementation starts
+   only after `LAYOUT CONTRACT READY` or `HTML LAYOUT CONTRACT READY` is evidence-backed.
+
+6. **Seed real tasks** in `memory/backlog.yaml` — each with executable `acceptance_checks`
    (shell commands, cwd = playbook root, exit 0 = pass). This is the step that makes the
    loop honest; don't skip it:
 
@@ -65,7 +133,7 @@ playbook state.
        - npm --prefix .. run typecheck
    ```
 
-6. **Operate**:
+7. **Operate**:
 
    ```bash
    node scripts/pb.mjs next --claim          # prints the task's checks
@@ -83,9 +151,9 @@ Claude Code (`.claude/settings.json` hooks):
 
 | Hook | Command |
 | --- | --- |
-| `SessionStart` | `node .agent-playbook/scripts/pb.mjs anchor` |
-| `UserPromptSubmit` | `node .agent-playbook/scripts/pb.mjs anchor --brief` |
-| `PreCompact` | `node .agent-playbook/scripts/pb.mjs checkpoint --snapshot` |
+| `SessionStart` | `node .agents-playbook/scripts/pb.mjs anchor` |
+| `UserPromptSubmit` | `node .agents-playbook/scripts/pb.mjs anchor --brief` |
+| `PreCompact` | `node .agents-playbook/scripts/pb.mjs checkpoint --snapshot` |
 
 Other runtimes: wrap each turn (or a periodic tick) with `pb anchor --brief`; on resume run
 `pb checkpoint`. See `skills/harden/SKILL.md`.
@@ -114,12 +182,12 @@ Full judgment steps in `processes/install.yaml` / `skills/install/SKILL.md`.
 Add a short pointer in the target repo's root `AGENTS.md` / `CLAUDE.md`:
 
 ```md
-Before work, read `.agent-playbook/playbook.yaml`, then `.agent-playbook/SKILL.md`, then run:
+Before work, read `.agents-playbook/playbook.yaml`, then `.agents-playbook/SKILL.md`, then run:
 
-node .agent-playbook/scripts/pb.mjs status
+node .agents-playbook/scripts/pb.mjs status
 ```
 
-The canonical source of truth after install is `.agent-playbook/playbook.yaml`.
+The canonical source of truth after install is `.agents-playbook/playbook.yaml`.
 
 ## Hardening note (Claude Code)
 

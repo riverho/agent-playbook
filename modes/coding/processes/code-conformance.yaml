@@ -1,0 +1,70 @@
+name: code-conformance
+version: 1.0.0
+purpose: >-
+  Implement, refactor, or review a code change against the target repository's executable
+  contract so violations fail inside the agent loop before human review.
+
+principle: >-
+  Code and executable checks outrank descriptive prose. Use prose to locate the contract; use
+  compilers, linters, tests, and project checks to enforce it.
+
+preconditions:
+  - Resolve the repository root from repository metadata or the harness location; do not assume cwd is the root.
+  - Read the repository instructions, task acceptance checks, and nearest compilable example before editing.
+  - Identify the changed behavior and the smallest executable check that can prove it.
+
+verification_tiers:
+  - id: contract
+    requirement: >-
+      Reuse repository primitives, public APIs, schemas, tokens, and compilable examples. Do not
+      duplicate an existing abstraction or import deprecated/archive paths.
+  - id: static
+    requirement: >-
+      Run applicable compile, type, lint, format, schema, generated-file, and deterministic-value
+      checks. Prefer type/API constraints that make invalid states unrepresentable.
+  - id: behavior
+    requirement: >-
+      Add or run behavior tests for every changed outcome, including keyboard, focus, error, and
+      boundary states when relevant. A render or snapshot check alone does not prove interaction.
+  - id: regression
+    requirement: Run focused task checks first, then the smallest relevant regression suite.
+  - id: anti-gaming
+    requirement: >-
+      Inspect the diff for new suppression directives or unsafe escape casts, deleted assertions,
+      weakened expectations, disabled checks, and tests rewritten merely to accept the change.
+
+canonical_steps:
+  - step: 1
+    name: Discover the executable contract
+    requirements:
+      - Inventory repository instructions, manifests, CI commands, project checks, and compilable examples.
+      - Map each task requirement to an existing command; add a focused check when no command proves it.
+      - Treat hand-maintained examples as guidance only unless they compile or execute in CI.
+  - step: 2
+    name: Establish the baseline
+    requirements:
+      - Run the focused checks before editing when practical and distinguish pre-existing failures.
+      - Preserve the exact command and exit status needed to reproduce any baseline failure.
+  - step: 3
+    name: Make the smallest conforming change
+    requirements:
+      - Copy or extend the nearest compilable example and existing primitive before inventing a new pattern.
+      - Keep public APIs explicit; use types or schemas to reject invalid combinations when the language supports it.
+      - Do not broaden scope to unrelated cleanup.
+  - step: 4
+    name: Verify all applicable tiers
+    requirements:
+      - Run contract/static checks, behavior tests, focused acceptance checks, then relevant regression checks.
+      - A newly authored check must fail on the known-bad case and pass on the repaired case.
+      - Make check failures repair-oriented: state what to use or change and point to the governing example or contract.
+  - step: 5
+    name: Audit the proof
+    requirements:
+      - Review the final diff for suppression, assertion deletion, test weakening, generated-artifact drift, and bypasses.
+      - Keep visual or manual judgment gates when required; record their evidence separately from automated checks.
+      - If a required tier cannot run, record blocked or an explicit approved exception; never call a silent skip verified.
+
+acceptance_checks:
+  - Every task requirement maps to executable evidence or an explicit human/manual gate.
+  - All applicable verification tiers exit zero without suppression or weakened tests.
+  - Failure output for newly added checks gives a concrete repair path.

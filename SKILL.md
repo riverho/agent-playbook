@@ -38,6 +38,12 @@ A task's `acceptance_checks` are **shell commands** (cwd = playbook root, exit 0
 `pb next` prints them when you claim; `pb validate --task <id>` runs them on demand;
 `pb record --status done` re-runs them and **refuses to record** if any fail.
 
+> **Paths are relative to the playbook root** — the folder containing `playbook.yaml`,
+> not the outer workspace. If the playbook is installed at `.agents-playbook/`, write
+> `Test-Path artifacts/X.md`, **not** `Test-Path .agents-playbook/artifacts/X.md` (that
+> resolves to `.agents-playbook/.agents-playbook/...` and fails on a file that exists).
+> `pb validate --task <id>` warns when a check names the playbook folder.
+
 - If checks fail: fix the work, or record `--status blocked` with notes on what's needed.
 - `--skip-checks` exists as an escape hatch, but the skip is stamped on the journal entry
   and flagged in reports. Don't use it to fake green.

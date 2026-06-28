@@ -1,6 +1,6 @@
 {
-  "name": "agent-playbook",
-  "version": "0.3.2",
+  "name": "agents-playbook",
+  "version": "0.3.3",
   "type": "module",
   "description": "A portable, agent-first playbook engine: a master playbook.yaml that indexes skills + processes, a friction-free loop CLI with enforced executable acceptance checks, and agent records that roll up into human reports. Everything lives in the folder (carry-on).",
   "keywords": [
@@ -11,6 +11,14 @@
     "automation"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/riverho/agent-playbook.git"
+  },
+  "homepage": "https://github.com/riverho/agent-playbook#readme",
+  "bugs": {
+    "url": "https://github.com/riverho/agent-playbook/issues"
+  },
   "bin": {
     "pb": "scripts/pb.mjs"
   },
@@ -20,7 +28,10 @@
     "validate": "node scripts/pb.mjs validate",
     "report": "node scripts/pb.mjs report",
     "list": "node scripts/pb.mjs list",
+    "update": "node scripts/pb.mjs update",
     "init": "node scripts/pb.mjs init",
+    "link": "npm link",
+    "unlink": "npm rm -g agents-playbook",
     "test": "node scripts/test-anchor-selective.mjs && node scripts/test-hollow-validate.mjs && node scripts/test-q5.mjs && node scripts/test-report-gates.mjs && node scripts/test-loop-epochs.mjs && node scripts/test-next-claim-guard.mjs && node scripts/test-loop-fresh.mjs && node scripts/test-trust-safety.mjs && node scripts/test-autonomous-loop.mjs && node scripts/test-win32-runner.mjs"
   },
   "dependencies": {
@@ -31,11 +42,12 @@
     "SKILL.md",
     "AGENTS.md",
     "README.md",
+    "INSTALL.md",
+    "modes/",
     "scripts/",
     "processes/",
     "skills/",
-    "memory/",
-    "artifacts/"
+    "memory/project-memory.md"
   ],
   "engines": {
     "node": ">=18"

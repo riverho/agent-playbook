@@ -22,12 +22,11 @@ description: >-
 # to override the host persona for this mode.
 directive: ""
 
-# Stage-2-ready pointers. Today these reference the GLOBAL indices. When skills
-# and processes later move into packs, repoint these inward and the resolver
-# becomes `active_mode ∪ engine`. Designed now so Stage 2 is a repoint, not a
-# rewrite. (Do NOT move skills/processes in this phase.)
-skills_index: skills/index.yaml
-processes_index: processes/index.yaml
+# Coding-domain workflows live in this pack. Engine-operation skills remain in
+# the global indices and are composed additively by the resolver:
+# `active_mode pack ∪ engine globals`.
+skills_index: modes/coding/skills/index.yaml
+processes_index: modes/coding/processes/index.yaml
 
 # principles — each is independently toggleable and explicitly typed:
 #   kind: advice  -> an anchor nudge only; never gates (e.g. style/altitude).
