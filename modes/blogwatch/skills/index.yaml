@@ -1,0 +1,14 @@
+# Pack-local skill index for the blogwatch pack. Registered ONLY here — the
+# engine's global skills/index.yaml does not know about it. Visible only while
+# `blogwatch` is active.
+
+skills:
+  - id: watch-feeds
+    file: modes/blogwatch/skills/watch-feeds/SKILL.md
+    process: watch-feeds
+    summary: Monitor blogwatcher feeds and x.com accounts for signals and record structured alerts.
+
+  - id: daily-monitor
+    file: modes/blogwatch/skills/daily-monitor/SKILL.md
+    process: daily-monitor
+    summary: Run the closed-loop daily monitoring orchestrator and surface errors.

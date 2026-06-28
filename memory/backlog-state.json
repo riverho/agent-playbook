@@ -139,5 +139,33 @@
     "agent_id": "agent",
     "mode": "coding",
     "updated_at": "2026-06-23T03:27:53.775Z"
+  },
+  "blogwatch-mode": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "updated_at": "2026-06-28T04:38:44.774Z"
+  },
+  "daily-monitor-orchestrator": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "updated_at": "2026-06-28T04:55:01.655Z"
+  },
+  "coding-pack-skills": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "claimed_at": "2026-06-28T06:53:41.177Z",
+    "updated_at": "2026-06-28T06:53:42.400Z"
+  },
+  "plan-20260628-001": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "claimed_at": "2026-06-28T06:53:42.407Z",
+    "updated_at": "2026-06-28T06:53:42.574Z"
+  },
+  "plan-20260628-002": {
+    "status": "done",
+    "loop_id": "loop-20260622-001",
+    "claimed_at": "2026-06-28T06:53:42.587Z",
+    "updated_at": "2026-06-28T06:53:42.790Z"
   }
 }

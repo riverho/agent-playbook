@@ -42,7 +42,7 @@ fi
 echo "==> npm link  (global \`$BIN\` -> this repo)"
 npm link
 
-# 3. verify the bin is reachable and runs
+# 4. verify the bin is reachable and runs
 if command -v pb >/dev/null 2>&1; then
   echo "==> pb on PATH: $(command -v pb)"
   if pb help >/dev/null 2>&1; then echo "==> pb runs OK"; fi
@@ -51,7 +51,7 @@ else
   echo "   $(npm prefix -g)"
 fi
 
-# 4. optional: prove the PUBLISHED shape works (tarball -> install -> bootstrap)
+# 5. optional: prove the PUBLISHED shape works (tarball -> install -> bootstrap)
 if [ "${1:-}" = "--pack" ]; then
   echo "==> --pack: published-tarball smoke test"
   TMP="$(mktemp -d)"

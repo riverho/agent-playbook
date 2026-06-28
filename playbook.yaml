@@ -13,7 +13,7 @@
 # ============================================================================
 
 name: agent-playbook
-version: 0.3.3
+version: 0.3.4
 description: >-
   A portable, agent-first playbook. Agents loop without friction: orient on the
   master, pick a task, run the matching skill/process, verify with executable
@@ -106,6 +106,9 @@ modes:
   # demo — a second pack that mounts purely from YAML (its own skill + process under
   # modes/demo/). The existence proof that a non-coding pack needs ZERO engine change.
   demo: modes/demo.yaml
+  # blogwatch — monitoring persona for blogwatcher feeds + x.com (Twitter).
+  # A full Stage-2 pack with its own skill + process; mounts purely from YAML.
+  blogwatch: modes/blogwatch.yaml
   # fable-5 — the Fable 5 operating persona (verification/scope/judgment discipline).
   # A persona mode: inherits the global engine skills; the persona lives in its directive.
   fable-5: modes/fable-5.yaml

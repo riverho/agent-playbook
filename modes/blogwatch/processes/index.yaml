@@ -1,0 +1,10 @@
+# Pack-local process index for the blogwatch pack. Registered ONLY here.
+
+processes:
+  - id: watch-feeds
+    file: modes/blogwatch/processes/watch-feeds.yaml
+    owner: blogwatch
+
+  - id: daily-monitor
+    file: modes/blogwatch/processes/daily-monitor.yaml
+    owner: blogwatch

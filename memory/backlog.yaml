@@ -337,3 +337,60 @@ tasks:
     acceptance_checks:
       - node scripts/test-mode-routing.mjs
       - node scripts/pb.mjs validate
+
+  # ==========================================================================
+  # Extra mode — blogwatch: monitoring persona for blogwatcher + x.com.
+  # A full Stage-2 pack that mounts purely from YAML (no engine change).
+  # ==========================================================================
+  - id: blogwatch-mode
+    title: Add a blogwatch mode pack for blogwatcher + x.com monitoring
+    status: done
+    skill: run-task
+    mode: blogwatch
+    priority: 1
+    notes: >-
+      Create modes/blogwatch.yaml with a monitoring persona, pack-local skill
+      (watch-feeds) and process (watch-feeds), register the mode in playbook.yaml,
+      and add scripts/check-blogwatch-mode.mjs + scripts/test-blogwatch-pack.mjs.
+      The pack must be carry-on (pure md+yaml) and mount with zero pb.mjs change.
+    acceptance_checks:
+      - node scripts/check-blogwatch-mode.mjs
+      - node scripts/test-blogwatch-pack.mjs
+      - node scripts/check-modes.mjs
+      - node scripts/pb.mjs validate
+
+  - id: daily-monitor-orchestrator
+    title: Build a closed-loop daily monitoring orchestrator for blogwatch mode
+    status: todo
+    skill: run-task
+    mode: blogwatch
+    priority: 1
+    notes: >-
+      Add scripts/pb-daily-monitor.mjs that heartbeats, activates blogwatch mode,
+      builds a daily backlog from modes/blogwatch/config/daily-watches.yaml,
+      drains it with pb loop run --auto --defer-blocked, and surfaces errors.
+      Add daily-monitor skill/process, ORCHESTRATOR.md, and append-only logs in
+      artifacts/reports/orchestrator-*.ndjson. Test with scripts/test-daily-monitor.mjs
+      and scripts/check-daily-monitor.mjs.
+    acceptance_checks:
+      - node scripts/check-daily-monitor.mjs
+      - node scripts/test-daily-monitor.mjs
+      - node scripts/check-blogwatch-mode.mjs
+      - node scripts/test-blogwatch-pack.mjs
+      - node scripts/check-modes.mjs
+      - node scripts/pb.mjs validate
+      - npm test
+  - id: plan-20260628-001
+    title: Monitor blogwatcher://example-feed for posts mentioning "agent-playbook"
+    status: todo
+    skill: watch-feeds
+    priority: 1
+    acceptance_checks:
+      - node -e "console.log('heartbeat blogwatch-example'); process.exit(0)"
+  - id: plan-20260628-002
+    title: Monitor x.com/@example for posts mentioning "agent-playbook"
+    status: todo
+    skill: watch-feeds
+    priority: 1
+    acceptance_checks:
+      - node -e "console.log('heartbeat x-com-example'); process.exit(0)"
