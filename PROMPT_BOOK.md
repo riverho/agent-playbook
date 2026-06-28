@@ -155,6 +155,22 @@ agent-playbook plan "Add OAuth2 login" with checks:
 
 ---
 
+### `agent-playbook triage`
+**When:** Work arrives as **prose** — a reflection's bug list, a "fix these" message, a subagent/review "COMPLETE" — and you want it turned into check-gated tasks instead of acted on directly.
+
+```text
+agent-playbook triage: <paste the bug list / reflection / report>
+```
+
+**Agent does:**
+- Load the `triage` skill (`skills/triage/SKILL.md` → `processes/triage-claim.yaml`).
+- Inspect the **cited evidence, not the prose**; reproduce each defect first (discard what doesn't reproduce).
+- Create **one backlog task per defect**, each with an acceptance_check that is **red now / green after** (`pb plan --goal "…" --check "…"`); route each to an existing skill.
+- A defect needing a capability no skill has → log a `pending` proposal + a **separate** build task, never an inline fix.
+- Show you the queued tasks before execution.
+
+---
+
 ### `agent-playbook next`
 **When:** You want to see the next task without claiming it.
 
@@ -447,6 +463,7 @@ agent-playbook learn from loop loop-20260618-001: "OAuth2 redirect URL was wrong
 | `agent-playbook status` | orient |
 | `agent-playbook open phase` | start a new loop + cycle |
 | `agent-playbook plan` | turn a goal into a task |
+| `agent-playbook triage` | turn prose (bug lists, reflections, reports) into check-gated tasks |
 | `agent-playbook claim` | start the next task |
 | `agent-playbook auto` | run the loop autonomously |
 | `agent-playbook done` / `blocked` | record a task outcome |

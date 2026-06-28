@@ -128,6 +128,11 @@ missing skill/process happens in a **separate evolution loop**, never inside a m
 > Do not silently edit a mode's skills/processes during an orchestrator run. Log a proposal,
 > then apply it in a separate agent loop and run `pb reflect` on the change.
 
+In that separate loop, convert the proposal (or any error log entry) into check-gated work with the
+**`triage` skill** (`skills/triage/SKILL.md` → `processes/triage-claim.yaml`): inspect the cited
+evidence, reproduce, one task per defect with a red→green check, and build a missing capability only
+under its own task — never inline. It is the named route from a logged finding to a verified fix.
+
 ## 6. Always-on logs
 
 Append-only JSON lines, so other agents read them without parsing prose.

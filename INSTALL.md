@@ -144,6 +144,11 @@ playbook state.
    node scripts/pb.mjs report
    ```
 
+   When work arrives as **prose** — a reflection's bug list, a "fix these" message, a subagent
+   "COMPLETE" — don't start coding from the summary. Route it through the **`triage` skill**
+   (`skills/triage/SKILL.md`): inspect the cited evidence, reproduce each defect, and turn each into
+   one backlog task with a red→green `acceptance_check` before any fix.
+
 ## Always-on monitoring & flows
 
 If the work is monitoring (feeds, accounts, dashboards) or a multi-stage pipeline, don't hand-roll

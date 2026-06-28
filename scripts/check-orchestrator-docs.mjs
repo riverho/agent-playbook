@@ -42,6 +42,7 @@ const orchMust = [
   ['fail-fast semantics', /fail-fast/i],
   ['one epoch per flow', /one loop epoch|one epoch/i],
   ['check-flow', /check-flow\.mjs/],
+  ['the triage route for proposals', /triage/i],
 ];
 for (const [label, re] of (ORCH ? orchMust : [])) {
   ok(`ORCHESTRATOR.md mentions ${label}`, re.test(ORCH), 'doc is out of sync with the shipped surface');
@@ -53,6 +54,7 @@ const installMust = [
   ['the --mode runner', /pb-daily-monitor\.mjs --mode/],
   ['the flow runner', /pb-flow\.mjs --flow/],
   ['a pointer to ORCHESTRATOR.md', /ORCHESTRATOR\.md/],
+  ['the triage skill for prose intake', /triage/i],
 ];
 for (const [label, re] of (INSTALL ? installMust : [])) {
   ok(`INSTALL.md mentions ${label}`, re.test(INSTALL), 'install guide does not route agents to the orchestrator');
@@ -65,6 +67,7 @@ const promptMust = [
   ['a monitor prompt', /agent-playbook monitor/i],
   ['a run-flow prompt', /run flow/i],
   ['a review-proposals prompt', /review proposals/i],
+  ['a triage prompt', /agent-playbook triage/i],
 ];
 for (const [label, re] of (PROMPTS ? promptMust : [])) {
   ok(`PROMPT_BOOK.md offers ${label}`, re.test(PROMPTS), 'prompt book is missing a prompt for the new surface');
