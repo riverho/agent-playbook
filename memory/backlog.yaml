@@ -41,6 +41,24 @@ tasks:
       - node scripts/pb.mjs validate
       - npm test
 
+  - id: release-version-sync
+    title: Fix release.yaml to bump playbook.yaml too + add a version-sync check
+    status: todo
+    skill: release
+    mode: coding
+    priority: 2
+    notes: >-
+      processes/release.yaml step 2 bumps only package.json, but `pb status` reads the version from
+      playbook.yaml — following it literally reproduces the v0.3.4 drift bug from this session's start.
+      Fix: (1) edit processes/release.yaml step 2 to bump BOTH package.json and playbook.yaml to the
+      same X.Y.Z; (2) add scripts/check-version-sync.mjs asserting package.json version === playbook.yaml
+      version (a reusable guardrail). Stretch (optional, note only): wire the sync assertion into
+      `pb validate` so drift fails structurally. scripts/check-release-sync.mjs gates both: versions
+      match AND release.yaml references bumping playbook.yaml. Red now (scripts absent) -> green after.
+    acceptance_checks:
+      - node scripts/check-release-sync.mjs
+      - node scripts/pb.mjs validate
+
   - id: triage-skill
     title: Add a triage skill + processes/triage-claim.yaml (prose -> check-gated backlog tasks)
     status: todo
