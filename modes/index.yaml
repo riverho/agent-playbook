@@ -1,0 +1,44 @@
+# ============================================================================
+#  modes/index.yaml — the MODE CATALOG (the "which streamline set?" menu).
+# ----------------------------------------------------------------------------
+#  One entry per mode registered in playbook.yaml's `modes:` map. `pb list modes`
+#  reads this to show every mode + a one-line abstract; `pb mode show <id>` then
+#  shows what's INSIDE a mode (its resolved skill+process pairs).
+#
+#  `abstract` is a one-line summary of the process/skill set the mode carries —
+#  summarize the mode's own indices, do NOT duplicate them. `pb validate` asserts
+#  this catalog and the master's `modes:` map agree in both directions; a menu
+#  that disagrees with the master must fail validation (a lying menu is worse
+#  than no menu).
+# ============================================================================
+name: mode-catalog
+version: 1.0.0
+description: >-
+  Catalog of operating modes. A mode is a "streamline set" — a persona plus a
+  skill/process pack — mounted on the invariant floor (claim → process/skill →
+  eval → done → cycle). Modes ride ON enforcement; none skips acceptance_checks.
+
+modes:
+  - id: coding
+    description: Strict engineering — smallest change that passes the checks; verify by exit code, not prose.
+    abstract: >-
+      Coding-domain conformance skills (code-conformance, pencil/html layout-conformance) ∪ the
+      global engine ops; the tests-green kind:check principle gates done.
+
+  - id: demo
+    description: Demonstration pack — proves a non-coding pack mounts purely from YAML.
+    abstract: >-
+      A single pack-local skill+process (demo-skill → demo-proc) ∪ engine ops; the existence proof
+      that a pack needs zero engine change.
+
+  - id: blogwatch
+    description: Monitoring persona for blogwatcher feeds and x.com (Twitter) accounts.
+    abstract: >-
+      Pack-local watch-feeds + daily-monitor skills/processes ∪ engine ops; signal-over-noise
+      monitoring with structured, sourced alerts and a closed-loop daily orchestrator.
+
+  - id: fable-5
+    description: Fable 5 operating persona — verify before you claim, stay in scope, name the rollback.
+    abstract: >-
+      Persona mode (no pack) — inherits every global engine skill/process; the verification, scope,
+      and judgment discipline lives entirely in its directive.

@@ -500,10 +500,8 @@ const prio = (t) => (typeof t.priority === 'number' ? t.priority : 100);
 // override). coding's pointers equal the global files, so its union == globals
 // == no change. A pack that points its skills_index/processes_index at its own
 // files (under modes/<id>/) contributes those entries only while it is active.
-function activeModeIndexPath(key) {
-  const doc = loadMode(resolveModeId());
-  const rel = doc && typeof doc[key] === 'string' && doc[key].trim() ? doc[key].trim() : null;
-  return rel;
+function modeIndexPath(doc, key) {
+  return doc && typeof doc[key] === 'string' && doc[key].trim() ? doc[key].trim() : null;
 }
 function mergeIndexEntries(globalPath, modePath, listKey) {
   const entries = [];
@@ -519,11 +517,19 @@ function mergeIndexEntries(globalPath, modePath, listKey) {
   if (modePath && modePath !== globalPath) push(readData(modePath)?.[listKey]); // then pack-local
   return entries;
 }
+// A specific mode's resolved menu (engine globals ∪ that mode's pack-local index).
+// `pb mode show <id>` lists ANY mode's menu, not only the active one.
+function modeSkillEntries(doc) {
+  return mergeIndexEntries(SKILL_INDEX, modeIndexPath(doc, 'skills_index'), 'skills');
+}
+function modeProcessEntries(doc) {
+  return mergeIndexEntries(PROCESS_INDEX, modeIndexPath(doc, 'processes_index'), 'processes');
+}
 function resolvedSkillEntries() {
-  return mergeIndexEntries(SKILL_INDEX, activeModeIndexPath('skills_index'), 'skills');
+  return modeSkillEntries(loadMode(resolveModeId()));
 }
 function resolvedProcessEntries() {
-  return mergeIndexEntries(PROCESS_INDEX, activeModeIndexPath('processes_index'), 'processes');
+  return modeProcessEntries(loadMode(resolveModeId()));
 }
 function skillFor(skillId) {
   return resolvedSkillEntries().find((s) => s.id === skillId) || null;
@@ -757,6 +763,23 @@ function runValidate() {
   // 7. declared paths targets exist
   for (const [k, v] of Object.entries(mPaths)) {
     ok(exists(v), `paths.${k} target does not exist: ${v}`);
+  }
+
+  // 8. mode catalog (modes/index.yaml) agrees with the master's `modes:` registry.
+  //    The menu must never silently DISAGREE with the master — a lying menu is
+  //    worse than no menu. Enforced only when the catalog exists (an absent menu
+  //    is a different concern; minimal/bootstrap playbooks may carry no catalog).
+  if (Object.keys(MODES).length && exists('modes/index.yaml')) {
+    const CATALOG = 'modes/index.yaml';
+    const cat = readData(CATALOG);
+    ok(cat && Array.isArray(cat.modes), `Mode catalog ${CATALOG} must contain a "modes" list`);
+    const catIds = new Set((cat?.modes || []).map((m) => m && m.id).filter(Boolean));
+    for (const id of Object.keys(MODES)) ok(catIds.has(id), `Mode "${id}" is in playbook.yaml modes: but missing from ${CATALOG}`);
+    for (const id of catIds) ok(MODES[id] !== undefined, `Mode "${id}" is in ${CATALOG} but not in playbook.yaml modes:`);
+    for (const m of cat?.modes || []) {
+      ok(m && m.id, `A mode entry in ${CATALOG} is missing an id`);
+      ok(m && typeof m.abstract === 'string' && m.abstract.trim(), `Mode "${m?.id}" in ${CATALOG} needs a non-empty abstract`);
+    }
   }
 
   return failures;
@@ -1683,8 +1706,25 @@ function cmdReport(args) {
 // ============================================================================
 //  list — print the indices
 // ============================================================================
+function listModes() {
+  const cat = readData('modes/index.yaml');
+  const entries = Array.isArray(cat?.modes) ? cat.modes : [];
+  console.log(`\nModes (default: ${DEFAULT_MODE || 'none'} · * = default):`);
+  if (!entries.length) {
+    console.log('  (no mode catalog — create modes/index.yaml)');
+  } else {
+    for (const m of entries) {
+      const mark = m.id === DEFAULT_MODE ? '*' : ' ';
+      const abstract = String(m.abstract || m.description || '').replace(/\s+/g, ' ').trim();
+      console.log(`  ${mark} ${String(m.id).padEnd(12)} ${abstract}`);
+    }
+  }
+  console.log("\nInside a mode: `pb mode show <id>`.\n");
+}
+
 function cmdList(args) {
   const which = args._[0];
+  if (which === 'modes') { listModes(); return; }
   const mode = resolveModeId();
   if (!which || which === 'processes') {
     console.log(`\nProcesses (mode: ${mode || 'none'}):`);
@@ -1941,9 +1981,11 @@ function modeAnchorLine(id, doc) {
 function cmdMode(args) {
   const sub = args._[0] || 'show';
   if (sub === 'show') {
-    const id = resolveModeId();
+    // `pb mode show` -> the active mode; `pb mode show <id>` -> that named mode's menu.
+    const explicit = args._[1] ? String(args._[1]).trim() : null;
+    const id = explicit || resolveModeId();
     const doc = loadMode(id);
-    console.log(`\nActive mode: ${id || '(none)'}`);
+    console.log(`\n${explicit ? 'Mode' : 'Active mode'}: ${id || '(none)'}`);
     if (!id) {
       console.log('No `default_mode` in the master and no loop/task override. Set one with `pb mode set <id>`.\n');
       return;
@@ -1968,7 +2010,25 @@ function cmdMode(args) {
         console.log(`  - [${pr.kind}] ${pr.id}${c} — ${pr.text || ''}`);
       }
     }
+    // The "what's inside" view — this mode's resolved menu (engine globals ∪ pack-local).
+    const sks = modeSkillEntries(doc);
+    const procs = modeProcessEntries(doc);
+    console.log(`Skills (${sks.length}):`);
+    for (const s of sks) console.log(`  ${String(s.id).padEnd(20)}${s.process ? ` → ${s.process}` : ''}`);
+    console.log(`Processes (${procs.length}):`);
+    for (const pr of procs) console.log(`  ${String(pr.id).padEnd(20)}${pr.owner ? ` (${pr.owner})` : ''}`);
     console.log(`Resolved via: task.mode ?? loop.mode ?? default_mode (${DEFAULT_MODE || 'unset'})\n`);
+    return;
+  }
+  if (sub === 'skills' || sub === 'processes') {
+    // Machine-readable menu: bare ids (one per line) for the named/active mode.
+    // Used by the orchestrator to detect a scaffold capability gap.
+    const explicit = args._[1] ? String(args._[1]).trim() : null;
+    const id = explicit || resolveModeId();
+    const doc = loadMode(id);
+    if (!doc) { console.error(`Unknown or unregistered mode: ${id || 'none'}`); process.exit(1); }
+    const entries = sub === 'skills' ? modeSkillEntries(doc) : modeProcessEntries(doc);
+    for (const e of entries) console.log(e.id);
     return;
   }
   if (sub === 'check') {
@@ -2011,7 +2071,7 @@ function cmdMode(args) {
     console.log(`Mode set: ${id} (scoped to loop ${loop.id}).`);
     return;
   }
-  console.error('Usage: pb mode <show | set <id>>');
+  console.error('Usage: pb mode <show [<id>] | set <id> | check | skills [<id>] | processes [<id>]>');
   process.exit(1);
 }
 
@@ -2553,7 +2613,7 @@ function cmdHelp() {
     validate --task <id>   Run that task's executable acceptance_checks
     anchor [--brief]       Print the constitution to re-inject (keeps the playbook salient)
     checkpoint [--snapshot]  Heartbeat: re-anchor + detect drift; --snapshot writes memory/RESUME.md
-    list [processes|skills]  Print the indices
+    list [processes|skills|modes]  Print the indices ("list modes" prints the mode catalog)
     update [--check] [--force] [--source <dir>] [--include-master]
                            Self-update: pull the latest engine from GitHub (update.repo) and
                            overlay engine files; preserves memory/ + artifacts/. --check dry-runs.

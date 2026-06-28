@@ -1,4 +1,4 @@
-active: loop-20260622-001
+active: null
 loops:
   - id: loop-20260617-001
     status: done
@@ -29,9 +29,9 @@ loops:
       Windows runner hardening + OpenCode adapter + NL skill epoch complete; opening a fresh epoch
       for the multi-agent + modes architecture.
   - id: loop-20260622-001
-    status: active
+    status: done
     started_at: '2026-06-22T17:19:12.277Z'
-    closed_at: null
+    closed_at: '2026-06-28T07:51:40.176Z'
     goal: >-
       Make the playbook multi-agent and mode-aware. (1) MODE feature: inject a per-task/per-loop
       persona 'directive' (system-prompt text) atop the invariant floor; ship 'coding' as the FIRST
@@ -46,7 +46,26 @@ loops:
       validate green; recorded done; reflect run.
     journal:
       first_line: 19
-      last_line: null
+      last_line: 35
     artifacts: artifacts/loops/loop-20260622-001
     reason: null
     mode: blogwatch
+  - id: loop-20260628-001
+    status: done
+    started_at: '2026-06-28T07:51:47.830Z'
+    closed_at: '2026-06-28T10:02:20.012Z'
+    goal: >-
+      Generalize the blogwatch orchestrator into a mode-agnostic flow runner: mode catalog+menu,
+      generic --mode scaffold, gap-to-proposal, flows/ with artifact-dir handoff
+    stop: >-
+      All four epoch tasks recorded done (acceptance_checks green) and blogwatch still drains via
+      the generic path with no regression
+    journal:
+      first_line: 36
+      last_line: 48
+    artifacts: artifacts/loops/loop-20260628-001
+    reason: null
+    reset_backlog:
+      archived_to: artifacts/loops/loop-20260628-001/backlog-snapshot-pre-fresh.yaml
+      count: 25
+      ts: '2026-06-28T07:51:47.843Z'

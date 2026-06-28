@@ -30,3 +30,8 @@ skills:
     file: skills/nl/SKILL.md
     process: use-playbook
     summary: Drive the playbook from natural language — map an utterance to intent and pb commands via scripts/lib/nl-router.mjs.
+
+  - id: triage
+    file: skills/triage/SKILL.md
+    process: triage-claim
+    summary: Convert narrative input (reflection findings, user bug lists, subagent reports) into check-gated backlog tasks before any code change.

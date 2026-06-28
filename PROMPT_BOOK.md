@@ -227,7 +227,85 @@ agent-playbook blocked T3: waiting for API credentials from platform team
 
 ---
 
-## 5. Verification
+## 5. Modes, monitoring & flows
+
+> You never need to remember CLI flags. Say the prompt; the agent looks up the right command.
+> Full guide: `ORCHESTRATOR.md`.
+
+### `agent-playbook list modes`
+**When:** You want to see which operating modes (monitoring/persona "streamline sets") exist.
+
+```text
+agent-playbook list modes
+```
+
+**Agent does:**
+- Run `node scripts/pb.mjs list modes`
+- Summarize each mode and its one-line abstract; ask which one you want.
+
+---
+
+### `agent-playbook show mode`
+**When:** You want to see what's inside a mode — its persona, principles, and skill/process menu.
+
+```text
+agent-playbook show mode blogwatch
+```
+
+**Agent does:**
+- Run `node scripts/pb.mjs mode show blogwatch`
+- Report the directive, principles, and the resolved skills + processes.
+
+---
+
+### `agent-playbook monitor`
+**When:** You want to run a mode's closed monitoring loop (scaffold a backlog, drain it, surface errors).
+
+```text
+agent-playbook monitor with the blogwatch mode
+```
+
+**Agent does:**
+- Confirm the mode exists (`node scripts/pb.mjs list modes`) and is configured (its `scaffold` descriptor + config).
+- Run `node scripts/pb-daily-monitor.mjs --mode blogwatch`
+- Report the exit code: `0` = all items done, `1` = some blocked (see `orchestrator-errors.ndjson`),
+  `2` = capability gap (a needed skill is missing; a proposal was logged — see `agent-playbook review proposals`).
+
+> Dry run first if unsure: append `--dry-run` (the agent will plan but not execute).
+
+---
+
+### `agent-playbook run flow`
+**When:** You want to run several modes in sequence (a pipeline), passing each step's output to the next.
+
+```text
+agent-playbook run flow example-digest
+```
+
+**Agent does:**
+- Run `node scripts/check-flow.mjs` to confirm the flow is well-formed.
+- Run `node scripts/pb-flow.mjs --flow example-digest`
+- Report per-step results. The flow runs under one loop epoch and is **fail-fast** — if a step
+  doesn't drain, later steps are skipped and the agent surfaces where it halted.
+
+---
+
+### `agent-playbook review proposals`
+**When:** A monitor exited with a capability gap, or you want to act on logged improvement proposals.
+
+```text
+agent-playbook review proposals
+```
+
+**Agent does:**
+- Read `artifacts/reports/orchestrator-iterations.ndjson` for `pending` proposals (each names a missing
+  skill/process and a building plan).
+- For each, propose building it **in a separate loop** (the monitor heartbeat never edits machinery),
+  then `pb plan` the build task with executable checks. Set the proposal `applied` after the build.
+
+---
+
+## 6. Verification
 
 ### `agent-playbook validate`
 **When:** You want a quick health check of the playbook itself.
@@ -253,7 +331,7 @@ agent-playbook check task T3
 
 ---
 
-## 6. Frontend / design
+## 7. Frontend / design
 
 ### `agent-playbook check screen`
 **When:** You have a rendered UI and want to compare it to the pencil/Figma/design mockup.
@@ -284,7 +362,7 @@ agent-playbook design review: review this screen/flow against the design system.
 
 ---
 
-## 7. Reporting and packaging
+## 8. Reporting and packaging
 
 ### `agent-playbook report`
 **When:** You want a human-readable rollup of recent work.
@@ -318,7 +396,7 @@ agent-playbook package loop loop-20260618-001 into artifacts/exports/loop-202606
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 ### `agent-playbook checkpoint`
 **When:** Suspected drift, before context compaction, or before a long-running operation.
@@ -372,6 +450,10 @@ agent-playbook learn from loop loop-20260618-001: "OAuth2 redirect URL was wrong
 | `agent-playbook claim` | start the next task |
 | `agent-playbook auto` | run the loop autonomously |
 | `agent-playbook done` / `blocked` | record a task outcome |
+| `agent-playbook list modes` / `show mode` | see which modes exist / what's inside one |
+| `agent-playbook monitor` | run a mode's monitoring heartbeat |
+| `agent-playbook run flow` | run a sequence of modes (a pipeline) |
+| `agent-playbook review proposals` | act on capability-gap / improvement proposals |
 | `agent-playbook validate` / `check task` | verify |
 | `agent-playbook check screen` / `design review` | frontend/design review |
 | `agent-playbook reflect` / `close loop` | end a phase |

@@ -1,171 +1,97 @@
 {
-  "plan-20260621-001": {
+  "mode-catalog": {
     "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-21T03:56:28.898Z",
-    "updated_at": "2026-06-21T03:59:26.702Z"
-  },
-  "plan-20260621-002": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-21T03:59:46.445Z",
-    "updated_at": "2026-06-21T04:00:05.258Z"
-  },
-  "plan-20260621-003": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-21T04:00:13.465Z",
-    "updated_at": "2026-06-22T08:04:40.151Z"
-  },
-  "oc-skeleton": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:42:18.812Z",
-    "updated_at": "2026-06-22T15:42:18.895Z"
-  },
-  "oc-defer": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:42:18.898Z",
-    "updated_at": "2026-06-22T15:42:19.533Z"
-  },
-  "oc-plugin": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:42:19.536Z",
-    "updated_at": "2026-06-22T15:42:19.671Z"
-  },
-  "oc-commands": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:42:19.674Z",
-    "updated_at": "2026-06-22T15:42:19.745Z"
-  },
-  "oc-agent": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:42:19.747Z",
-    "updated_at": "2026-06-22T15:42:19.816Z"
-  },
-  "oc-inject": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:42:19.818Z",
-    "updated_at": "2026-06-22T15:42:19.985Z"
-  },
-  "phase-20260622-001": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:57:39.209Z",
-    "updated_at": "2026-06-22T16:24:32.135Z"
-  },
-  "mode-schema": {
-    "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T17:25:04.574Z",
-    "updated_at": "2026-06-22T17:27:18.694Z"
-  },
-  "mode-resolve": {
-    "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T17:40:17.171Z",
-    "updated_at": "2026-06-22T17:44:33.474Z"
-  },
-  "agent-identity": {
-    "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T18:09:47.768Z",
-    "updated_at": "2026-06-22T18:12:47.325Z"
-  },
-  "mode-principles": {
-    "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T18:39:47.705Z",
+    "loop_id": "loop-20260628-001",
+    "claimed_at": "2026-06-28T08:05:41.869Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-22T18:44:05.127Z"
+    "updated_at": "2026-06-28T08:13:17.372Z"
   },
-  "wip-per-agent": {
+  "orchestrator-generic": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T19:09:47.821Z",
+    "loop_id": "loop-20260628-001",
+    "claimed_at": "2026-06-28T08:14:48.649Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-22T19:13:32.307Z"
+    "updated_at": "2026-06-28T08:18:43.986Z"
   },
-  "atomic-claim": {
+  "scaffold-gap-proposal": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T19:39:46.618Z",
+    "loop_id": "loop-20260628-001",
+    "claimed_at": "2026-06-28T08:19:51.783Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-22T19:43:13.174Z"
+    "updated_at": "2026-06-28T08:22:36.048Z"
   },
-  "mode-routed-claim": {
+  "flow-runner": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T20:09:47.636Z",
+    "loop_id": "loop-20260628-001",
+    "claimed_at": "2026-06-28T08:24:33.119Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-22T20:12:11.778Z"
+    "updated_at": "2026-06-28T08:28:50.079Z"
   },
-  "pack-resolution": {
+  "docs-orchestrator-flow": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-23T03:09:14.795Z",
+    "loop_id": "loop-20260628-001",
+    "claimed_at": "2026-06-28T08:33:09.797Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-23T03:12:04.624Z"
+    "updated_at": "2026-06-28T08:34:53.813Z"
   },
-  "pack-carryon-validate": {
+  "docs-prompt-book": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-23T03:17:13.769Z",
+    "loop_id": "loop-20260628-001",
+    "claimed_at": "2026-06-28T08:36:33.609Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-23T03:19:29.618Z"
+    "updated_at": "2026-06-28T08:37:55.565Z"
   },
-  "demo-pack-proof": {
+  "smoke-test-survey": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-23T03:24:13.417Z",
+    "loop_id": "loop-20260628-001",
+    "claimed_at": "2026-06-28T08:44:40.819Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-23T03:27:53.775Z"
-  },
-  "blogwatch-mode": {
-    "status": "done",
-    "loop_id": "loop-20260622-001",
-    "updated_at": "2026-06-28T04:38:44.774Z"
-  },
-  "daily-monitor-orchestrator": {
-    "status": "done",
-    "loop_id": "loop-20260622-001",
-    "updated_at": "2026-06-28T04:55:01.655Z"
-  },
-  "coding-pack-skills": {
-    "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-28T06:53:41.177Z",
-    "updated_at": "2026-06-28T06:53:42.400Z"
+    "updated_at": "2026-06-28T08:45:59.033Z"
   },
   "plan-20260628-001": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-28T06:53:42.407Z",
-    "updated_at": "2026-06-28T06:53:42.574Z"
+    "loop_id": "loop-20260628-001",
+    "claimed_at": "2026-06-28T08:56:51.464Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-06-28T08:57:00.647Z"
   },
   "plan-20260628-002": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-28T06:53:42.587Z",
-    "updated_at": "2026-06-28T06:53:42.790Z"
+    "loop_id": "loop-20260628-001",
+    "updated_at": "2026-06-28T09:15:07.113Z"
+  },
+  "grade-smoke-tests": {
+    "status": "done",
+    "loop_id": "loop-20260628-001",
+    "claimed_at": "2026-06-28T09:19:49.055Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-06-28T09:22:27.003Z"
+  },
+  "triage-skill": {
+    "status": "done",
+    "loop_id": "loop-20260628-001",
+    "claimed_at": "2026-06-28T09:50:57.776Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-06-28T09:53:43.576Z"
   }
 }

@@ -25,6 +25,20 @@ directive: |
 skills_index: modes/blogwatch/skills/index.yaml
 processes_index: modes/blogwatch/processes/index.yaml
 
+# scaffold — how the orchestrator turns this mode's config into a backlog. The
+# orchestrator is mode-agnostic: it reads THIS descriptor rather than hardcoding
+# the pack's shape. `config` is the input file; `items` is the array key inside
+# it; each item becomes one task whose goal is `goal_template` (with ${field}
+# substituted from the item), whose acceptance_check is the item's `check_field`,
+# planned against `skill`. `id_field` names the item's stable id.
+scaffold:
+  config: modes/blogwatch/config/daily-watches.yaml
+  items: watches
+  skill: watch-feeds
+  id_field: id
+  goal_template: "Monitor ${source} for ${criteria}"
+  check_field: check
+
 principles:
   - id: signal_over_noise
     kind: advice
