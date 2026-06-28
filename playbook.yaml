@@ -13,7 +13,7 @@
 # ============================================================================
 
 name: agent-playbook
-version: 0.3.4
+version: 0.3.5
 description: >-
   A portable, agent-first playbook. Agents loop without friction: orient on the
   master, pick a task, run the matching skill/process, verify with executable
