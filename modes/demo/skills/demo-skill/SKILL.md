@@ -1,3 +1,8 @@
+---
+name: demo-skill
+description: Demonstrate a pack-local skill that resolves only while the demo mode is active.
+---
+
 # demo-skill
 
 A pack-local skill registered **only** in `modes/demo/skills/index.yaml`. It

@@ -1,3 +1,8 @@
+---
+name: code-conformance
+description: Prove code changes against the repository's own executable conformance harness and guard against check-gaming.
+---
+
 # Code conformance
 
 Use this skill when implementing, refactoring, or reviewing code whose correctness must be

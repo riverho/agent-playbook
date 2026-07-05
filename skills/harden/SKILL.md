@@ -1,3 +1,8 @@
+---
+name: harden
+description: Re-anchor the playbook against context loss with anchor, checkpoint, and runtime auto-injection practices.
+---
+
 # Harden (survive context loss)
 
 Use this skill when an agent loses the playbook over a long session — drifts off the loop, forgets the rules, stops recording, or a fresh/resumed session never re-reads the master. Applies to any runtime (Claude Code, OpenClaw, Hermes, …); the failure is shared: **attention decays as context grows, compacts, or hands off.**

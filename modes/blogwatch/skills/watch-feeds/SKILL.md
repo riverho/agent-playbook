@@ -1,3 +1,8 @@
+---
+name: watch-feeds
+description: Monitor configured blogwatch and x.com sources, capture evidence, and record structured alerts through the playbook.
+---
+
 # watch-feeds
 
 Use this skill when the active loop is in `blogwatch` mode and you need to monitor blogwatcher feeds and/or x.com (Twitter) accounts for relevant signals.

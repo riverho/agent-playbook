@@ -1,3 +1,8 @@
+---
+name: install
+description: Apply the Agent-Playbook into a target repository without clobbering existing repo conventions or process/skill layers.
+---
+
 # Install (apply the playbook to a repo)
 
 Use this skill when applying / installing the Agent-Playbook into a target repository — i.e. when summoned by `/agent-playbook` or asked to "set up the playbook here."

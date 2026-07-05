@@ -1,0 +1,31 @@
+name: wiki-news-verify
+version: 1.0.0
+purpose: >-
+  Verify the LLM Wiki remains a synthesized RSS/news wiki after daily refresh.
+
+canonical_steps:
+  - step: 1
+    name: Architecture check
+    requirements:
+      - Run `check-rss-wiki-architecture.py /Users/river/wiki`.
+      - Exit non-zero on errors.
+
+  - step: 2
+    name: Frontmatter check
+    requirements:
+      - Parse every markdown frontmatter block with PyYAML.
+
+  - step: 3
+    name: Count check
+    requirements:
+      - Count article, raw, entity, concept, and meta pages.
+      - Compare against previous daily report when present.
+
+  - step: 4
+    name: Navigation check
+    requirements:
+      - Ensure root index and RSS monitoring page point to the wide maps.
+
+acceptance_checks:
+  - python ~/.hermes/skills/research/llm-wiki/scripts/check-rss-wiki-architecture.py /Users/river/wiki
+  - node scripts/wiki-news-daily.mjs --wiki /Users/river/wiki --db /Users/river/.blogwatcher-cli/blogwatcher-cli.db --since today --limit 120 --dry-run

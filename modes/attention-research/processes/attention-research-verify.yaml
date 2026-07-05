@@ -1,0 +1,23 @@
+name: attention-research-verify
+version: 1.0.0
+purpose: Verify attention-research project scaffold files and mode registration.
+
+canonical_steps:
+  - step: 1
+    name: Structural check
+    requirements:
+      - Run `node scripts/check-attention-research-mode.mjs`.
+  - step: 2
+    name: Behavioral check
+    requirements:
+      - Run `node scripts/test-attention-research-mode.mjs`.
+  - step: 3
+    name: Project scaffold check
+    requirements:
+      - Run `node scripts/attention-research-daily.mjs --project attention-research --window morning --dry-run`.
+      - Run `node scripts/attention-research-daily.mjs --project attention-research --window afternoon --dry-run`.
+
+acceptance_checks:
+  - node scripts/check-attention-research-mode.mjs
+  - node scripts/test-attention-research-mode.mjs
+  - node scripts/pb.mjs validate

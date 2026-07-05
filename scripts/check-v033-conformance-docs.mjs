@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import yaml from 'js-yaml';
 
-const expectedVersion = '0.3.3';
+const expectedVersion = '0.3.5';
 const master = yaml.load(readFileSync('playbook.yaml', 'utf8'));
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
@@ -24,13 +24,14 @@ function check(name, condition) {
   }
 }
 
-check('all release version authorities are 0.3.3',
+check('all release version authorities are 0.3.5',
   master.version === expectedVersion && pkg.version === expectedVersion &&
   lock.version === expectedVersion && lock.packages?.['']?.version === expectedVersion);
 check('published package includes modes and installation documentation',
   pkg.files?.includes('modes/') && pkg.files?.includes('INSTALL.md'));
-check('README identifies v0.3.3 and both source adapters',
-  /v0\.3\.3/i.test(readme) && /\$pencil-design-layout-conformance/.test(readme) &&
+const readmeVersionRe = new RegExp('v' + expectedVersion.replace(/\./g, '\\.'), 'i');
+check(`README identifies v${expectedVersion} and both source adapters`,
+  readmeVersionRe.test(readme) && /\$pencil-design-layout-conformance/.test(readme) &&
   /\$html-design-layout-conformance/.test(readme));
 check('README requires source contract before broad codebase analysis',
   /before broad[\s\S]{0,80}codebase analysis/i.test(readme) &&

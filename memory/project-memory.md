@@ -43,7 +43,56 @@ This file is read on every session, right after `playbook.yaml`. Keep it short a
 
 ## Project Facts
 
-_(None yet.)_
+1. **Two skill systems, two doorways — no dispatch collision.** Playbook skills (`skills/<id>/SKILL.md`,
+   indexed in `skills/index.yaml`, routing to `processes/`) are invoked by **reading a file path**;
+   harness skills (`~/.claude/skills/`) are invoked by the **`Skill` tool / slash command**. They
+   resolve against different registries, so they can never shadow each other. The one intentional seam
+   is the `/agent-playbook` harness skill bootstrapping into this repo (the `install` skill is
+   "summoned by /agent-playbook"). Convention to prevent name drift as both sets grow: reference a
+   **playbook** skill as a path (`skills/<id>/SKILL.md`), a **harness** skill as a slash (`/<name>`) —
+   the shape disambiguates. A repo-local `.claude/skills/` is the only place a real name collision
+   could occur, and it'd be harness-vs-harness, never with `skills/`.
+
+2. **Orchestrator architecture — flow runner over a mode catalog (BUILT, epoch loop-20260628-001).**
+   Command/file surface as shipped: `pb list modes` + `pb mode show <id>` + `pb mode skills|processes <id>`
+   (catalog in `modes/index.yaml`, sync-guarded by `pb validate`); `scripts/pb-daily-monitor.mjs --mode <id>`
+   reads a `scaffold:` descriptor on the mode (config/items/skill/goal_template/check_field/id_field) — no pack
+   literals; a scaffold skill absent from the mode's menu logs ONE `pending` proposal to
+   `artifacts/reports/orchestrator-iterations.ndjson` and exits 2 without scaffolding; `scripts/pb-flow.mjs
+   --flow <id>` runs `flows/<id>.yaml` steps in order (one epoch, fail-fast) with `--input`/`--output`
+   artifact-dir handoff (fixed `handoff.yaml` / `handoff` key so modes need not share an items key);
+   `scripts/check-flow.mjs` validates flow structure. Original design notes below still hold.
+   A **mode** = a streamline set (its own skills + processes, mounted from YAML). The orchestrator
+   heartbeat is mode-agnostic: `mode set → scaffold backlog → drain (pb loop run --auto) → stop when
+   done → reflect → log proposals`. It is **read-only on its own machinery** — it never edits
+   skills/processes mid-run; gaps become proposals in `orchestrator-iterations.ndjson`, built later by
+   a **separate evolution loop**. Three nested levels: **flow** (sequence of modes) → **mode heartbeat**
+   (one streamline set) → **task loop** (claim→act→verify→record). Settled design decisions:
+   - **Scaffolding/planning is "sufficient" only if it is check-generating** — each scaffolded task must
+     carry an executable acceptance_check (the `--check` on `pb plan`), or "stop when backlog done"
+     means nothing and the north star breaks.
+   - **Mode catalog:** add `modes/index.yaml` (description + abstract of each mode's process set) with
+     a two-level menu — `pb list modes` (which streamline set) and `pb mode show <mode>` (what's inside).
+     `pb validate` must assert the index and `playbook.yaml`'s `modes:` map agree, or the menu lies.
+   - **Mode composition = a `flows/` definition, NOT `next:` pointers inside modes** — keeps modes
+     reusable across pipelines. A flow lists ordered mode steps.
+   - **Handoff model: explicit artifact dirs (decided).** Mode A writes to its `output` dir; mode B's
+     scaffold reads that as `input`. No shared mutable backlog. Modes know only their own input/output
+     dirs, never their neighbors.
+   - **Flow semantics:** fail-fast (a step that doesn't drain halts and surfaces via non-zero exit,
+     like `pb-daily-monitor.mjs` today) and **one loop epoch per flow run** so `pb reflect` sees the
+     whole sequence as one unit of learning.
+   - `scripts/pb-daily-monitor.mjs` is the blogwatch-welded prototype of this; generalizing it =
+     parameterize `--mode`, lift scaffold config into the mode, add the menu + gap-proposal surfaces.
+
+3. **Prose → backlog goes through `triage` (skill `triage` / `processes/triage-claim.yaml`).** When work
+   arrives as narrative — a reflection's bug list, a user "fix these," a subagent "COMPLETE" — do not start
+   coding from the summary. Run the triage route: inspect the cited evidence not the prose; reproduce each
+   defect first; **one defect = one task with an acceptance_check that is RED before / GREEN after** (group
+   only when one check truly covers them all — that is the granularity rule); route skills-first; and touch a
+   skill/process/mode ONLY when a defect reveals a missing capability — then log a `pending` proposal and build
+   it in a **separate** loop, never inline. This was the unanimous finding of three independent agents in the
+   smoke test (`SMOKE_TEST_*.md`).
 
 ## Memory Budget
 

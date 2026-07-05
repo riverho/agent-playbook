@@ -1,0 +1,27 @@
+tasks:
+  - id: plan-20260628-001
+    title: Run morning attention research for project attention-research
+    status: done
+    skill: daily-research-run
+    mode: attention-research
+    priority: 1
+    acceptance_checks:
+      - >-
+        node scripts/attention-research-daily.mjs --project attention-research --window morning
+        --date today --dry-run
+    loop_id: loop-20260628-005
+    claimed_at: '2026-06-28T16:54:51.031Z'
+    updated_at: '2026-06-28T16:54:51.149Z'
+  - id: plan-20260628-002
+    title: Run morning attention research for project attention-research
+    status: done
+    skill: daily-research-run
+    mode: attention-research
+    priority: 1
+    acceptance_checks:
+      - >-
+        node scripts/attention-research-daily.mjs --project attention-research --window morning
+        --date today --dry-run
+    loop_id: loop-20260628-005
+    claimed_at: '2026-06-28T16:55:42.450Z'
+    updated_at: '2026-06-28T16:55:42.597Z'

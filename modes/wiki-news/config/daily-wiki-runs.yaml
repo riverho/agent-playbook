@@ -1,0 +1,22 @@
+# ============================================================================
+#  modes/wiki-news/config/daily-wiki-runs.yaml — daily LLM Wiki refresh config
+# ----------------------------------------------------------------------------
+#  Each run becomes one backlog task during the daily monitor. `check` is the
+#  executable acceptance gate. The wrapper resolves `--since today` itself.
+# ============================================================================
+
+runs:
+  - id: wiki-news-daily
+    wiki_path: /Users/river/wiki
+    blogwatcher_db: /Users/river/.blogwatcher-cli/blogwatcher-cli.db
+    window: today
+    limit: 120
+    criteria: >-
+      scan blogwatcher, ingest reachable feeds, backfill recent DB queue rows,
+      rebuild wiki indexes, and pass architecture validation
+    check: >-
+      node scripts/wiki-news-daily.mjs
+      --wiki /Users/river/wiki
+      --db /Users/river/.blogwatcher-cli/blogwatcher-cli.db
+      --since today
+      --limit 120

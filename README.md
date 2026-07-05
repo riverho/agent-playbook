@@ -1,6 +1,6 @@
 # Agent-Playbook
 
-Current engine release: **v0.3.3**.
+Current engine release: **v0.3.5**.
 
 > **Done is an exit code, not prose.** The kernel is a `pb record --status done` that re-runs each
 > task's `acceptance_checks` (shell commands) and *refuses* on failure. Anchoring, the North Star

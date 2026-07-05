@@ -18,8 +18,11 @@ try { symlinkSync(resolve('node_modules'), join(root, 'node_modules')); } catch 
 writeFileSync(join(root, 'SKILL.md'), '# test skill\n');
 writeFileSync(join(root, 'memory/project-memory.md'), '# memory\n');
 writeFileSync(join(root, 'memory/journal.ndjson'), '');
-writeFileSync(join(root, 'processes/index.yaml'), 'processes: []\n');
-writeFileSync(join(root, 'skills/index.yaml'), 'skills: []\n');
+writeFileSync(join(root, 'processes/index.yaml'), 'processes:\n  - id: run-task\n    file: processes/run-task.yaml\n');
+writeFileSync(join(root, 'processes/run-task.yaml'), 'id: run-task\n');
+writeFileSync(join(root, 'skills/index.yaml'), 'skills:\n  - id: run-task\n    file: skills/run-task/SKILL.md\n    process: run-task\n');
+mkdirSync(join(root, 'skills/run-task'), { recursive: true });
+writeFileSync(join(root, 'skills/run-task/SKILL.md'), '# run task\n');
 writeFileSync(join(root, 'memory/backlog.yaml'), [
   'tasks:',
   '  - id: IMPL-001',
@@ -88,8 +91,19 @@ if (!existsSync(snapshotPath)) throw new Error('archived backlog snapshot is mis
 const snapshot = yaml.load(readFileSync(snapshotPath, 'utf8'));
 if (snapshot.tasks[0].id !== 'IMPL-001') throw new Error('archived snapshot does not contain the original stale task');
 
-// 3. A fresh-loop task list must come from new work, not the old IMPL-* ids.
+// 3. `pb plan` must append cleanly after the fresh reset wrote `tasks: []`.
 pb(['cycle', '--new', '--goal', 'rebuild from current state', '--stop', 'new scope agreed']);
+writeFileSync(join(root, 'memory/cycle.md'), readFileSync(join(root, 'memory/cycle.md'), 'utf8').replace(
+  /\(Your host memory is the PAST[\s\S]*?do not silently follow memory\.\)/,
+  'No conflicts found.',
+));
+pb(['plan', '--goal', 'planned after fresh reset', '--check', 'node scripts/pb.mjs validate']);
+backlog = yaml.load(readFileSync(join(root, 'memory/backlog.yaml'), 'utf8'));
+if (backlog.tasks.length !== 1 || backlog.tasks[0].title !== 'planned after fresh reset') {
+  throw new Error('pb plan should produce one valid task after `tasks: []` fresh reset');
+}
+
+// 4. A fresh-loop task list must come from new work, not the old IMPL-* ids.
 writeFileSync(join(root, 'memory/backlog.yaml'), [
   'tasks:',
   '  - id: LOOP2-001',

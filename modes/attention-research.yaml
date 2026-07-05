@@ -1,0 +1,49 @@
+# ============================================================================
+#  modes/attention-research.yaml — reusable daily attention research pack.
+# ----------------------------------------------------------------------------
+#  Project-specific paths/schedules live under
+#  /Users/river/.openclaw/workspace/projects/<project-id>/scaffolds/.
+# ============================================================================
+
+id: attention-research
+description: >-
+  Reusable daily research digest mode. Project scaffolds provide concrete topic files,
+  prompt directories, output roots, schedules, delivery targets, and windows.
+
+directive: |
+  You are operating in attention-research mode. Your job is to run a project-owned
+  daily research scaffold without polluting reusable mode files with project paths.
+
+  - The project scaffold is the source of truth for topics, prompts, output roots, windows, and delivery.
+  - Use the relevant attention-research skill for the run window.
+  - Prefer Tavily MCP when available; if unavailable, follow the skill's documented fallback and record it.
+  - Every topic output must include source links.
+  - META.json updates and delivery failures must be explicit.
+  - Do not edit mode/skill machinery during a cron run.
+
+skills_index: modes/attention-research/skills/index.yaml
+processes_index: modes/attention-research/processes/index.yaml
+
+scaffold:
+  config: modes/attention-research/examples/morning-run.yaml
+  example_config: modes/attention-research/examples/morning-run.yaml
+  items: runs
+  skill: daily-research-run
+  id_field: id
+  goal_template: "Run ${window} attention research for project ${project}"
+  check_field: check
+
+principles:
+  - id: project_scaffold_first
+    kind: advice
+    text: Concrete paths, topic lists, schedules, and delivery targets come from projects/<project-id>/scaffolds, not mode files.
+  - id: sources_required
+    kind: advice
+    text: Every digest item must carry source links and topic-specific evidence.
+  - id: cron_thin_trigger
+    kind: advice
+    text: Hermes cron should trigger the project scaffold; it should not be the place where project inputs live.
+  - id: mode_checker_green
+    kind: check
+    text: The attention-research pack must validate structurally and dry-run through project scaffolds.
+    check: node scripts/check-attention-research-mode.mjs && node scripts/attention-research-daily.mjs --project attention-research --window morning --date today --dry-run

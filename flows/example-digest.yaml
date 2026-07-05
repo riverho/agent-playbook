@@ -1,0 +1,25 @@
+# ============================================================================
+#  flows/example-digest.yaml — an illustrative flow (artifact-dir handoff).
+# ----------------------------------------------------------------------------
+#  A flow is an ORDERED sequence of monitor modes. Sequencing lives here, in the
+#  flow file — modes carry no `next:` pointers, so each mode stays reusable across
+#  flows. Handoff is explicit artifact dirs: a step writes its `output` dir; the
+#  next step reads it as its `input` (the runner passes both to the orchestrator).
+#
+#  Run:  node scripts/pb-flow.mjs --flow example-digest
+#
+#  Semantics enforced by the runner: ONE loop epoch per flow run; FAIL-FAST (a
+#  step whose backlog does not drain halts the flow, later steps are skipped).
+#
+#  This example self-chains the blogwatch mode (gather, then re-check from the
+#  handoff) purely to show the wiring on a real registered mode. A production flow
+#  would chain DIFFERENT modes (e.g. gather -> summarize -> publish).
+# ============================================================================
+id: example-digest
+description: Illustrative two-step flow showing the output -> input artifact-dir handoff.
+steps:
+  - mode: blogwatch
+    output: artifacts/flows/example-digest/gather
+  - mode: blogwatch
+    input: artifacts/flows/example-digest/gather
+    output: artifacts/flows/example-digest/recheck

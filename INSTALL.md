@@ -144,6 +144,31 @@ playbook state.
    node scripts/pb.mjs report
    ```
 
+   When work arrives as **prose** — a reflection's bug list, a "fix these" message, a subagent
+   "COMPLETE" — don't start coding from the summary. Route it through the **`triage` skill**
+   (`skills/triage/SKILL.md`): inspect the cited evidence, reproduce each defect, and turn each into
+   one backlog task with a red→green `acceptance_check` before any fix.
+
+## Always-on monitoring & flows
+
+If the work is monitoring (feeds, accounts, dashboards) or a multi-stage pipeline, don't hand-roll
+it — use the orchestrator. **Look up the proper way before acting:**
+
+```bash
+node scripts/pb.mjs list modes        # which modes (streamline sets) exist
+node scripts/pb.mjs mode show <id>    # a mode's directive, principles, and skill+process menu
+
+node scripts/pb-daily-monitor.mjs --mode <id>   # run one mode's monitoring heartbeat
+node scripts/pb-flow.mjs --flow <id>            # run a sequence of modes (flows/<id>.yaml)
+```
+
+The heartbeat scaffolds a backlog from the mode's own `scaffold` descriptor (every task carries an
+executable check), drains it, and surfaces errors; a missing capability becomes a `pending`
+proposal rather than an unroutable task. Flows chain modes with explicit artifact-dir handoff, one
+loop epoch, fail-fast. **Full guide: `ORCHESTRATOR.md`** — read it before running or extending a
+monitor. To add a monitorable mode, give it a pack + a `scaffold:` block and register it in both
+`playbook.yaml` `modes:` and `modes/index.yaml` (`pb validate` enforces they agree).
+
 ## Harden (recommended)
 
 Wire the anchor into the runtime so the playbook survives long context, compaction, and handoff.

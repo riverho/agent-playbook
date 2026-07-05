@@ -1,171 +1,116 @@
 {
-  "plan-20260621-001": {
+  "plan-20260629-001": {
     "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-21T03:56:28.898Z",
-    "updated_at": "2026-06-21T03:59:26.702Z"
+    "loop_id": "loop-20260629-002",
+    "claimed_at": "2026-06-29T02:00:00.626Z",
+    "updated_at": "2026-06-29T02:00:00.746Z"
   },
-  "plan-20260621-002": {
+  "plan-20260705-001": {
     "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-21T03:59:46.445Z",
-    "updated_at": "2026-06-21T04:00:05.258Z"
-  },
-  "plan-20260621-003": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-21T04:00:13.465Z",
-    "updated_at": "2026-06-22T08:04:40.151Z"
-  },
-  "oc-skeleton": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:42:18.812Z",
-    "updated_at": "2026-06-22T15:42:18.895Z"
-  },
-  "oc-defer": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:42:18.898Z",
-    "updated_at": "2026-06-22T15:42:19.533Z"
-  },
-  "oc-plugin": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:42:19.536Z",
-    "updated_at": "2026-06-22T15:42:19.671Z"
-  },
-  "oc-commands": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:42:19.674Z",
-    "updated_at": "2026-06-22T15:42:19.745Z"
-  },
-  "oc-agent": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:42:19.747Z",
-    "updated_at": "2026-06-22T15:42:19.816Z"
-  },
-  "oc-inject": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:42:19.818Z",
-    "updated_at": "2026-06-22T15:42:19.985Z"
-  },
-  "phase-20260622-001": {
-    "status": "done",
-    "loop_id": "loop-20260621-001",
-    "claimed_at": "2026-06-22T15:57:39.209Z",
-    "updated_at": "2026-06-22T16:24:32.135Z"
-  },
-  "mode-schema": {
-    "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T17:25:04.574Z",
-    "updated_at": "2026-06-22T17:27:18.694Z"
-  },
-  "mode-resolve": {
-    "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T17:40:17.171Z",
-    "updated_at": "2026-06-22T17:44:33.474Z"
-  },
-  "agent-identity": {
-    "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T18:09:47.768Z",
-    "updated_at": "2026-06-22T18:12:47.325Z"
-  },
-  "mode-principles": {
-    "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T18:39:47.705Z",
+    "loop_id": "loop-20260705-001",
+    "claimed_at": "2026-07-05T04:16:09.857Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-22T18:44:05.127Z"
+    "updated_at": "2026-07-05T04:17:41.313Z"
   },
-  "wip-per-agent": {
+  "plan-20260705-002": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T19:09:47.821Z",
+    "loop_id": "loop-20260705-001",
+    "claimed_at": "2026-07-05T04:17:41.428Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-22T19:13:32.307Z"
+    "updated_at": "2026-07-05T04:18:43.755Z"
   },
-  "atomic-claim": {
+  "plan-20260705-003": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T19:39:46.618Z",
+    "loop_id": "loop-20260705-001",
+    "claimed_at": "2026-07-05T04:18:43.872Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-22T19:43:13.174Z"
+    "updated_at": "2026-07-05T04:19:47.603Z"
   },
-  "mode-routed-claim": {
+  "plan-20260705-004": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-22T20:09:47.636Z",
+    "loop_id": "loop-20260705-001",
+    "claimed_at": "2026-07-05T04:19:47.715Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-22T20:12:11.778Z"
+    "updated_at": "2026-07-05T04:20:44.856Z"
   },
-  "pack-resolution": {
+  "fix-v033-version-regex": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-23T03:09:14.795Z",
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:01:41.769Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-23T03:12:04.624Z"
+    "updated_at": "2026-07-05T10:03:10.838Z"
   },
-  "pack-carryon-validate": {
+  "fix-wiki-python-venv": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-23T03:17:13.769Z",
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:03:10.953Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-23T03:19:29.618Z"
+    "updated_at": "2026-07-05T10:04:44.354Z"
   },
-  "demo-pack-proof": {
+  "fix-cmdnext-skillformode": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-23T03:24:13.417Z",
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:04:44.469Z",
     "claimed_by": "agent",
     "agent_id": "agent",
     "mode": "coding",
-    "updated_at": "2026-06-23T03:27:53.775Z"
+    "updated_at": "2026-07-05T10:06:16.322Z"
   },
-  "blogwatch-mode": {
+  "fix-validate-memoize": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "updated_at": "2026-06-28T04:38:44.774Z"
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:06:16.460Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T10:08:31.501Z"
   },
-  "daily-monitor-orchestrator": {
+  "fix-monitor-hardcoded-defaults": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "updated_at": "2026-06-28T04:55:01.655Z"
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:08:31.645Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T10:13:09.041Z"
   },
-  "coding-pack-skills": {
+  "fix-project-relative-config": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-28T06:53:41.177Z",
-    "updated_at": "2026-06-28T06:53:42.400Z"
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:13:09.179Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T10:17:06.104Z"
   },
-  "plan-20260628-001": {
+  "fix-scaffold-field-validation": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-28T06:53:42.407Z",
-    "updated_at": "2026-06-28T06:53:42.574Z"
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:17:06.221Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T10:19:48.109Z"
   },
-  "plan-20260628-002": {
+  "fix-extract-loop-lib": {
     "status": "done",
-    "loop_id": "loop-20260622-001",
-    "claimed_at": "2026-06-28T06:53:42.587Z",
-    "updated_at": "2026-06-28T06:53:42.790Z"
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:19:48.226Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T10:49:56.205Z"
   }
 }

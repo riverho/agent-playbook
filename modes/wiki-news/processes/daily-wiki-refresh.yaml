@@ -1,0 +1,55 @@
+name: daily-wiki-refresh
+version: 1.0.0
+purpose: >-
+  Run the complete daily blogwatcher -> LLM Wiki refresh and verify it with executable checks.
+
+required_inputs:
+  - wiki_path
+  - blogwatcher_db
+  - since/window
+  - limit
+
+canonical_steps:
+  - step: 1
+    name: Orient
+    requirements:
+      - Run `pb status`.
+      - Confirm the active mode is `wiki-news`.
+      - Read `modes/wiki-news/config/daily-wiki-runs.yaml` for runtime args.
+
+  - step: 2
+    name: Acquire
+    requirements:
+      - Run `blogwatcher-cli scan` with the configured DB.
+      - Capture success, failure, and new-article counts.
+
+  - step: 3
+    name: Ingest
+    requirements:
+      - Run `/Users/river/wiki/scripts/rss_deep_ingest.py` for reachable feeds.
+      - Run `/Users/river/wiki/scripts/blogwatcher_delta_ingest.py --since <date> --limit <n>` for the DB queue.
+      - Treat source 301/429/404 as reportable warnings when DB backfill and final verification pass.
+
+  - step: 4
+    name: Rebuild synthesis
+    requirements:
+      - Run `/Users/river/wiki/scripts/rebuild_news_indexes.py`.
+      - Ensure entity/topic ledgers reflect normalized article pages.
+
+  - step: 5
+    name: Verify
+    requirements:
+      - Run the RSS wiki architecture check.
+      - Run frontmatter validation.
+      - Write a report under `artifacts/reports/wiki-news/`.
+
+  - step: 6
+    name: Record
+    requirements:
+      - Record done only when the task acceptance check exits 0.
+      - On non-zero, leave the task blocked and include the report path.
+
+acceptance_checks:
+  - node scripts/wiki-news-daily.mjs --wiki /Users/river/wiki --db /Users/river/.blogwatcher-cli/blogwatcher-cli.db --since today --limit 120 --dry-run
+  - node scripts/check-wiki-news-mode.mjs
+  - node scripts/pb.mjs validate

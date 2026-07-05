@@ -1,3 +1,8 @@
+---
+name: release
+description: Cut a versioned release by bumping the version, tagging, pushing, and publishing the GitHub release.
+---
+
 # Skill: release
 > Routes to → `processes/release.yaml`
 
