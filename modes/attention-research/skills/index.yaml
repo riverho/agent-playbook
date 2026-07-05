@@ -1,0 +1,10 @@
+skills:
+  - id: daily-research-run
+    file: modes/attention-research/skills/daily-research-run/SKILL.md
+    process: daily-research-run
+    summary: Run a project-owned attention-research daily scaffold for a specific window.
+
+  - id: attention-research-verify
+    file: modes/attention-research/skills/attention-research-verify/SKILL.md
+    process: attention-research-verify
+    summary: Verify attention-research project scaffolds and generated traces.

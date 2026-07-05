@@ -32,7 +32,7 @@
     "init": "node scripts/pb.mjs init",
     "link": "npm link",
     "unlink": "npm rm -g agents-playbook",
-    "test": "node scripts/test-anchor-selective.mjs && node scripts/test-hollow-validate.mjs && node scripts/test-q5.mjs && node scripts/test-report-gates.mjs && node scripts/test-loop-epochs.mjs && node scripts/test-next-claim-guard.mjs && node scripts/test-loop-fresh.mjs && node scripts/test-trust-safety.mjs && node scripts/test-autonomous-loop.mjs && node scripts/test-win32-runner.mjs"
+    "test": "node scripts/test-anchor-selective.mjs && node scripts/test-hollow-validate.mjs && node scripts/test-q5.mjs && node scripts/test-report-gates.mjs && node scripts/test-loop-epochs.mjs && node scripts/test-next-claim-guard.mjs && node scripts/test-loop-fresh.mjs && node scripts/test-mode-plan-validation.mjs && node scripts/test-trust-safety.mjs && node scripts/test-autonomous-loop.mjs && node scripts/test-win32-runner.mjs"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"

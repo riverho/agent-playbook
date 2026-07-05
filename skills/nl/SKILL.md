@@ -1,3 +1,8 @@
+---
+name: nl
+description: Route natural-language requests onto the Agent-Playbook intent grammar and canonical pb commands.
+---
+
 # Use the Agent-Playbook by Natural Language
 
 Use this skill when an agent (or human) wants to **drive the playbook from a conversation** — without memorising the `pb` command surface. The skill teaches an agent to map a free-form request to the right playbook step (orient → select → act → verify → record → report) and the right `pb` command(s).

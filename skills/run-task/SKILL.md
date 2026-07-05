@@ -1,3 +1,8 @@
+---
+name: run-task
+description: Execute a generic backlog task by making the smallest change that satisfies the task's acceptance checks.
+---
+
 # Run Task
 
 Use this skill for **any** backlog task that does not have a more specific skill. It is the default unit of work for the loop.

@@ -1,3 +1,8 @@
+---
+name: daily-monitor
+description: Run the blogwatch daily monitoring orchestrator that plans watch tasks, drains the backlog, and logs reflections.
+---
+
 # daily-monitor
 
 Use this skill when you need to run the closed-loop daily monitoring orchestrator for blogwatcher + x.com feeds.

@@ -31,10 +31,12 @@ const ITERATIONS_LOG = resolve(REPORTS_DIR, 'orchestrator-iterations.ndjson');
 const DEFAULT_MONITOR_MODE = 'blogwatch';
 
 function parseArgs(argv) {
-  const args = { mode: DEFAULT_MONITOR_MODE, config: null, input: null, output: null, dryRun: false, resetCycle: false };
+  const args = { mode: DEFAULT_MONITOR_MODE, project: null, window: null, config: null, input: null, output: null, dryRun: false, resetCycle: false };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--mode') args.mode = argv[++i];
+    else if (a === '--project') args.project = argv[++i];
+    else if (a === '--window') args.window = argv[++i];
     else if (a === '--config') args.config = argv[++i];
     else if (a === '--input') args.input = argv[++i];   // flow handoff: read scaffold from a prior step's output dir
     else if (a === '--output') args.output = argv[++i]; // flow handoff: write this step's output for the next step
@@ -47,6 +49,9 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv);
 const DRY_RUN = args.dryRun;
 const MODE = args.mode;
+const PROJECT = args.project;
+const WINDOW = args.window;
+const WORKSPACE_PROJECTS = '/Users/river/.openclaw/workspace/projects';
 // Artifact-dir handoff (decided design): a step reads its scaffold from the prior
 // step's OUTPUT dir (`--input`) and writes its own OUTPUT for the next step
 // (`--output`). The handoff file is a fixed-name, fixed-key contract so modes need
@@ -96,8 +101,43 @@ function loadScaffold(modeId) {
 }
 
 const SCAFFOLD = loadScaffold(MODE);
-const CONFIG_PATH = args.config || SCAFFOLD.config;
 const ID_FIELD = SCAFFOLD.id_field || 'id';
+
+function projectRoot(projectId) {
+  return projectId ? resolve(WORKSPACE_PROJECTS, projectId) : null;
+}
+
+function loadYamlAbs(path) {
+  return yaml.load(readFileSync(path, 'utf8')) || {};
+}
+
+function resolveConfigPath() {
+  if (args.config) return resolve(ROOT, args.config);
+  if (PROJECT) {
+    const root = projectRoot(PROJECT);
+    const projectFile = resolve(root, 'project.yaml');
+    if (!existsSync(projectFile)) throw new Error(`Project descriptor not found: ${projectFile}`);
+    const projectDoc = loadYamlAbs(projectFile);
+    const modeCfg = projectDoc.modes && projectDoc.modes[MODE];
+    if (modeCfg) {
+      if (typeof modeCfg === 'string') return modeCfg;
+      if (WINDOW && modeCfg[WINDOW]) return modeCfg[WINDOW];
+      if (modeCfg.default_scaffold) return modeCfg.default_scaffold;
+    }
+    const idxPath = resolve(root, 'scaffolds/index.yaml');
+    if (existsSync(idxPath)) {
+      const idx = loadYamlAbs(idxPath);
+      const found = (idx.scaffolds || []).find((s) => s.mode === MODE && (!WINDOW || s.window === WINDOW));
+      if (found?.run_config) return found.run_config;
+      if (found?.file) return found.file;
+    }
+    const candidate = resolve(root, `scaffolds/modes/${MODE}/${WINDOW || 'default'}-run.yaml`);
+    if (existsSync(candidate)) return candidate;
+  }
+  return SCAFFOLD.config;
+}
+
+const CONFIG_PATH = resolveConfigPath();
 
 function readActiveLoop() {
   const path = resolve(ROOT, 'memory/loops.yaml');
@@ -172,7 +212,7 @@ function logGapProposal(loopId, skillId) {
 }
 
 function loadConfig() {
-  // Source: a prior step's output dir (flow handoff) OR the mode's static config.
+  // Source: a prior step's output dir (flow handoff), an explicit/project config, OR the mode fallback config.
   const abs = INPUT_DIR ? resolve(INPUT_DIR, HANDOFF_FILE) : resolve(ROOT, CONFIG_PATH);
   const itemsKey = INPUT_DIR ? HANDOFF_KEY : SCAFFOLD.items;
   if (!existsSync(abs)) throw new Error(`Config not found: ${abs}`);
@@ -183,6 +223,7 @@ function loadConfig() {
     if (!it || !it[ID_FIELD] || !it[SCAFFOLD.check_field]) {
       throw new Error(`Item missing ${ID_FIELD}/${SCAFFOLD.check_field}: ${JSON.stringify(it)}`);
     }
+    if (PROJECT && !it.project) it.project = PROJECT;
   }
   return items;
 }
@@ -218,6 +259,21 @@ function planItems(items) {
     planned.push({ taskId: m[1], item });
   }
   return planned;
+}
+
+function writeProjectScaffoldTrace(loopId, items, planned) {
+  if (!PROJECT) return;
+  const root = projectRoot(PROJECT);
+  const stamp = WINDOW ? `${loopId}-${WINDOW}` : loopId;
+  const dir = resolve(root, `scaffolds/generated/${stamp}`);
+  if (DRY_RUN) {
+    console.log(`[dry-run] would write project scaffold trace: ${dir}`);
+    return;
+  }
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(resolve(dir, 'scaffold-input.yaml'), readFileSync(resolve(ROOT, CONFIG_PATH), 'utf8'), 'utf8');
+  writeFileSync(resolve(dir, 'planned-tasks.yaml'), yaml.dump({ mode: MODE, project: PROJECT, window: WINDOW, config: CONFIG_PATH, planned }), 'utf8');
+  writeFileSync(resolve(dir, 'scaffold-report.md'), `# Scaffold Report — ${MODE}\n\n- project: ${PROJECT}\n- window: ${WINDOW || ''}\n- loop_id: ${loopId}\n- config: ${CONFIG_PATH}\n- planned: ${planned.length}\n\n`, 'utf8');
 }
 
 function runAuto() {
@@ -337,6 +393,7 @@ if (!DRY_RUN && !menuSkillIds().has(SCAFFOLD.skill)) {
 
 const items = loadConfig();
 const planned = planItems(items);
+writeProjectScaffoldTrace(loop?.id || 'legacy', items, planned);
 const auto = runAuto();
 const summary = summarize(planned);
 writeLogs(loop?.id || 'legacy', planned, summary, auto.out);

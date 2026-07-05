@@ -1,0 +1,15 @@
+# Example only. Active project configs live under:
+# /Users/river/.openclaw/workspace/projects/<project-id>/scaffolds/modes/attention-research/
+runs:
+  - id: example-morning
+    project: example
+    window: morning
+    search_provider: tavily
+    topics_file: /path/to/topics.yaml
+    prompt_dir: /path/to/PROMPTS/TOPICS
+    output_root: /path/to/docs/research/topics
+    meta_field: lastMorningUpdate
+    retry_field: retryCount
+    deliver: telegram:<chat-id>
+    check: >-
+      node scripts/attention-research-daily.mjs --project example --window morning --date today --dry-run

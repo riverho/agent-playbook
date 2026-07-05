@@ -336,7 +336,12 @@ function appendBacklogTask(task) {
     writeFileSync(p(BACKLOG), JSON.stringify(bl, null, 2) + '\n', 'utf8');
     return;
   }
-  const text = readText(BACKLOG);
+  let text = readText(BACKLOG);
+  // `loop new --fresh` resets YAML backlogs to `tasks: []`. Appending an
+  // indented list item after that scalar inline list creates invalid YAML:
+  // `tasks: []\n  - id: ...`. Normalize that empty-list form to a block list
+  // header before appending so the first planned task becomes valid YAML.
+  text = text.replace(/(^|\n)(\s*tasks:)\s*\[\]\s*(?=\n|$)/, '$1$2');
   const taskYaml = yaml.dump(task, { lineWidth: 100 }).trimEnd();
   const indented = taskYaml.split('\n').map((line, i) => (i === 0 ? '  - ' + line : '    ' + line)).join('\n');
   const sep = text.endsWith('\n') ? '' : '\n';
@@ -534,6 +539,10 @@ function resolvedProcessEntries() {
 function skillFor(skillId) {
   return resolvedSkillEntries().find((s) => s.id === skillId) || null;
 }
+function skillForMode(skillId, modeId) {
+  const doc = loadMode(modeId || resolveModeId());
+  return modeSkillEntries(doc).find((s) => s.id === skillId) || null;
+}
 function unmetDeps(task, tasks) {
   const deps = Array.isArray(task.dependencies) ? task.dependencies : [];
   return deps.filter((dep) => !tasks.some((t) => t.id === dep && t.status === 'done'));
@@ -715,7 +724,7 @@ function runValidate() {
   for (const t of tasks) {
     ok(t.id, 'A backlog task is missing an id');
     ok(ALLOWED_STATUSES.includes(t.status), `Task ${t.id} has invalid status: ${t.status}`);
-    if (t.skill) ok(skillFor(t.skill), `Task ${t.id} references unknown skill: ${t.skill}`);
+    if (t.skill) ok(skillForMode(t.skill, t.mode), `Task ${t.id} references unknown skill: ${t.skill}${t.mode ? ` (mode: ${t.mode})` : ''}`);
     for (const dep of t.dependencies || []) {
       ok(ids.has(dep), `Task ${t.id} references unknown dependency: ${dep}`);
     }
@@ -1044,7 +1053,8 @@ function cmdPlan(args) {
     process.exit(1);
   }
   const skill = args.skill || 'run-task';
-  if (skill && !skillFor(skill)) {
+  const mode = resolveModeId();
+  if (skill && !skillForMode(skill, mode)) {
     console.error(`Unknown skill: ${skill}`);
     process.exit(1);
   }
@@ -1057,6 +1067,7 @@ function cmdPlan(args) {
     title: String(args.goal).trim(),
     status: 'todo',
     skill,
+    mode,
     priority,
     acceptance_checks: checks,
   };
@@ -1771,7 +1782,7 @@ function cmdBootstrap() {
   const created = [];
 
   writeIfMissing('playbook.yaml', `name: agent-playbook
-version: 0.3.1
+version: 0.3.5
 description: Repo-local agent playbook.
 entry: SKILL.md
 

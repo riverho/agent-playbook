@@ -42,3 +42,15 @@ modes:
     abstract: >-
       Persona mode (no pack) — inherits every global engine skill/process; the verification, scope,
       and judgment discipline lives entirely in its directive.
+
+  - id: wiki-news
+    description: Daily LLM Wiki news ingestion from blogwatcher + RSS sources.
+    abstract: >-
+      Pack-local daily-wiki-refresh + wiki-news-ingest + wiki-news-verify skills/processes ∪ engine ops;
+      scans blogwatcher, ingests/rebuilds the wiki, backfills DB deltas, and verifies the RSS wiki architecture.
+
+  - id: attention-research
+    description: Reusable daily research digest mode driven by project-owned scaffolds.
+    abstract: >-
+      Pack-local daily-research-run + attention-research-verify skills/processes ∪ engine ops;
+      project scaffolds supply topics, windows, delivery, and concrete acceptance commands.
