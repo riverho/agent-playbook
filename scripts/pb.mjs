@@ -721,10 +721,23 @@ function runValidate() {
     failures.push(`${BACKLOG} parse error: ${e.message}`);
   }
   const ids = new Set(tasks.map((t) => t.id).filter(Boolean));
+  // Resolving a task's skill re-reads the mode YAML + global skill index; cache the
+  // resolved skill-id Set per mode so a backlog of N tasks parses each catalog once,
+  // not once per task. Keyed by the task's raw mode (undefined shares one key and
+  // resolves against the active mode, exactly as skillForMode did per-call).
+  const modeSkillIdCache = new Map();
+  const skillIdsForMode = (modeId) => {
+    const key = modeId || '';
+    if (!modeSkillIdCache.has(key)) {
+      const doc = loadMode(modeId || resolveModeId());
+      modeSkillIdCache.set(key, new Set(modeSkillEntries(doc).map((s) => s.id)));
+    }
+    return modeSkillIdCache.get(key);
+  };
   for (const t of tasks) {
     ok(t.id, 'A backlog task is missing an id');
     ok(ALLOWED_STATUSES.includes(t.status), `Task ${t.id} has invalid status: ${t.status}`);
-    if (t.skill) ok(skillForMode(t.skill, t.mode), `Task ${t.id} references unknown skill: ${t.skill}${t.mode ? ` (mode: ${t.mode})` : ''}`);
+    if (t.skill) ok(skillIdsForMode(t.mode).has(t.skill), `Task ${t.id} references unknown skill: ${t.skill}${t.mode ? ` (mode: ${t.mode})` : ''}`);
     for (const dep of t.dependencies || []) {
       ok(ids.has(dep), `Task ${t.id} references unknown dependency: ${dep}`);
     }
@@ -943,7 +956,7 @@ function cmdNext(args) {
     return;
   }
 
-  const sk = candidate.skill ? skillFor(candidate.skill) : null;
+  const sk = candidate.skill ? skillForMode(candidate.skill, candidate.mode) : null;
   console.log(`\n  Next task: [${candidate.id}] ${candidate.title}`);
   console.log(`  Priority:  ${prio(candidate)}`);
   if (candidate.notes) console.log(`  Notes:     ${candidate.notes}`);

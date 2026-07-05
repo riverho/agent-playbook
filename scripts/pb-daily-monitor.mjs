@@ -18,6 +18,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import yaml from 'js-yaml';
+import { readActiveLoop } from './lib/loop-lib.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -27,8 +28,16 @@ const ERRORS_LOG = resolve(REPORTS_DIR, 'orchestrator-errors.ndjson');
 const REFLECTIONS_LOG = resolve(REPORTS_DIR, 'orchestrator-reflections.ndjson');
 const ITERATIONS_LOG = resolve(REPORTS_DIR, 'orchestrator-iterations.ndjson');
 
-// The reference mode the orchestrator was first built for. Override with --mode.
-const DEFAULT_MONITOR_MODE = 'blogwatch';
+// The reference monitor mode is declared in the master (playbook.yaml
+// `default_monitor_mode`), NOT baked into the engine — falls back to default_mode,
+// then the first registered mode. Override per-run with --mode.
+const _bootMaster = loadMaster();
+const DEFAULT_MONITOR_MODE =
+  (typeof _bootMaster.default_monitor_mode === 'string' && _bootMaster.default_monitor_mode.trim())
+    ? _bootMaster.default_monitor_mode.trim()
+    : (typeof _bootMaster.default_mode === 'string' && _bootMaster.default_mode.trim())
+      ? _bootMaster.default_mode.trim()
+      : Object.keys(_bootMaster.modes || {})[0];
 
 function parseArgs(argv) {
   const args = { mode: DEFAULT_MONITOR_MODE, project: null, window: null, config: null, input: null, output: null, dryRun: false, resetCycle: false };
@@ -51,7 +60,7 @@ const DRY_RUN = args.dryRun;
 const MODE = args.mode;
 const PROJECT = args.project;
 const WINDOW = args.window;
-const WORKSPACE_PROJECTS = '/Users/river/.openclaw/workspace/projects';
+const WORKSPACE_PROJECTS = process.env.PB_WORKSPACE_PROJECTS || '/Users/river/.openclaw/workspace/projects';
 // Artifact-dir handoff (decided design): a step reads its scaffold from the prior
 // step's OUTPUT dir (`--input`) and writes its own OUTPUT for the next step
 // (`--output`). The handoff file is a fixed-name, fixed-key contract so modes need
@@ -118,18 +127,21 @@ function resolveConfigPath() {
     const projectFile = resolve(root, 'project.yaml');
     if (!existsSync(projectFile)) throw new Error(`Project descriptor not found: ${projectFile}`);
     const projectDoc = loadYamlAbs(projectFile);
+    // project.yaml paths are relative to the PROJECT root, not the playbook repo.
+    // resolve() is a no-op when the declared value is already absolute.
+    const fromProject = (val) => resolve(root, val);
     const modeCfg = projectDoc.modes && projectDoc.modes[MODE];
     if (modeCfg) {
-      if (typeof modeCfg === 'string') return modeCfg;
-      if (WINDOW && modeCfg[WINDOW]) return modeCfg[WINDOW];
-      if (modeCfg.default_scaffold) return modeCfg.default_scaffold;
+      if (typeof modeCfg === 'string') return fromProject(modeCfg);
+      if (WINDOW && modeCfg[WINDOW]) return fromProject(modeCfg[WINDOW]);
+      if (modeCfg.default_scaffold) return fromProject(modeCfg.default_scaffold);
     }
     const idxPath = resolve(root, 'scaffolds/index.yaml');
     if (existsSync(idxPath)) {
       const idx = loadYamlAbs(idxPath);
       const found = (idx.scaffolds || []).find((s) => s.mode === MODE && (!WINDOW || s.window === WINDOW));
-      if (found?.run_config) return found.run_config;
-      if (found?.file) return found.file;
+      if (found?.run_config) return fromProject(found.run_config);
+      if (found?.file) return fromProject(found.file);
     }
     const candidate = resolve(root, `scaffolds/modes/${MODE}/${WINDOW || 'default'}-run.yaml`);
     if (existsSync(candidate)) return candidate;
@@ -139,23 +151,15 @@ function resolveConfigPath() {
 
 const CONFIG_PATH = resolveConfigPath();
 
-function readActiveLoop() {
-  const path = resolve(ROOT, 'memory/loops.yaml');
-  if (!existsSync(path)) return null;
-  const doc = yaml.load(readFileSync(path, 'utf8'));
-  if (!doc.active) return null;
-  return (doc.loops || []).find((l) => l.id === doc.active && l.status === 'active') || null;
-}
-
 function ensureLoop() {
-  const loop = readActiveLoop();
+  const loop = readActiveLoop(ROOT);
   if (loop) return loop;
   if (DRY_RUN) {
     console.log('[dry-run] would create a new loop');
     return { id: 'DRY' };
   }
   runPb(['loop', 'new', '--fresh', '--goal', `Daily ${MODE} monitoring`, '--stop', 'Backlog drained and errors surfaced']);
-  return readActiveLoop();
+  return readActiveLoop(ROOT);
 }
 
 function ensureCycle(reset) {
@@ -219,11 +223,24 @@ function loadConfig() {
   const doc = yaml.load(readFileSync(abs, 'utf8'));
   const items = doc && doc[itemsKey];
   if (!Array.isArray(items)) throw new Error(`Config must have a "${itemsKey}" array (source: ${abs})`);
+  // Every ${field} the goal_template substitutes must be present and non-empty on
+  // each item — otherwise renderGoal silently emits an empty goal (e.g. "Monitor
+  // for ") and a meaningless task gets planned. Derived from the mode's own
+  // template so this stays generic across packs (restores the old per-scaffold guard).
+  const templateFields = [...String(SCAFFOLD.goal_template).matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]);
   for (const it of items) {
     if (!it || !it[ID_FIELD] || !it[SCAFFOLD.check_field]) {
       throw new Error(`Item missing ${ID_FIELD}/${SCAFFOLD.check_field}: ${JSON.stringify(it)}`);
     }
+    // Inject the project id BEFORE validating template fields — a goal_template may
+    // reference ${project}, which is supplied by the --project arg, not the item.
     if (PROJECT && !it.project) it.project = PROJECT;
+    for (const f of templateFields) {
+      if (it[f] == null || String(it[f]).trim() === '') {
+        throw new Error(`Item "${it[ID_FIELD]}" missing goal_template field "${f}" ` +
+          `(goal_template: ${SCAFFOLD.goal_template}) — would render an empty goal`);
+      }
+    }
   }
   return items;
 }

@@ -27,7 +27,7 @@ check('skill/process files exist and link',()=>{
   for(const p of processes){ if(!existsSync(resolve(root,p.file))) throw new Error(`process missing ${p.file}`); }
 });
 check('attention-research project scaffolds exist',()=>{
-  const base='/Users/river/.openclaw/workspace/projects/attention-research';
+  const base=resolve(process.env.PB_WORKSPACE_PROJECTS||'/Users/river/.openclaw/workspace/projects','attention-research');
   for(const rel of ['project.yaml','scaffolds/index.yaml','scaffolds/cron/ar-morning-digest.yaml','scaffolds/cron/ar-afternoon-update.yaml','scaffolds/modes/attention-research/morning-run.yaml','scaffolds/modes/attention-research/afternoon-run.yaml']){
     if(!existsSync(resolve(base,rel))) throw new Error(`missing ${base}/${rel}`);
   }

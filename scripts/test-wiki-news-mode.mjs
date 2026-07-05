@@ -9,8 +9,8 @@ import { execSync } from 'node:child_process';
 
 const repoRoot = process.cwd();
 const root = mkdtempSync(join(tmpdir(), 'pbwikinews-'));
-for (const d of ['scripts', 'memory', 'modes', 'skills', 'processes', 'artifacts/reports']) mkdirSync(join(root, d), { recursive: true });
-for (const f of ['scripts/pb.mjs', 'scripts/pb-daily-monitor.mjs', 'scripts/wiki-news-daily.mjs']) copyFileSync(f, join(root, f));
+for (const d of ['scripts', 'scripts/lib', 'memory', 'modes', 'skills', 'processes', 'artifacts/reports']) mkdirSync(join(root, d), { recursive: true });
+for (const f of ['scripts/pb.mjs', 'scripts/pb-daily-monitor.mjs', 'scripts/wiki-news-daily.mjs', 'scripts/lib/loop-lib.mjs']) copyFileSync(f, join(root, f));
 try { symlinkSync(resolve('node_modules'), join(root, 'node_modules')); } catch {}
 copyFileSync(resolve('modes/coding.yaml'), join(root, 'modes/coding.yaml'));
 copyFileSync(resolve('modes/wiki-news.yaml'), join(root, 'modes/wiki-news.yaml'));

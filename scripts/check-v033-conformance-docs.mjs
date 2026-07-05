@@ -29,8 +29,9 @@ check('all release version authorities are 0.3.5',
   lock.version === expectedVersion && lock.packages?.['']?.version === expectedVersion);
 check('published package includes modes and installation documentation',
   pkg.files?.includes('modes/') && pkg.files?.includes('INSTALL.md'));
-check('README identifies v0.3.5 and both source adapters',
-  /v0\.3\.3/i.test(readme) && /\$pencil-design-layout-conformance/.test(readme) &&
+const readmeVersionRe = new RegExp('v' + expectedVersion.replace(/\./g, '\\.'), 'i');
+check(`README identifies v${expectedVersion} and both source adapters`,
+  readmeVersionRe.test(readme) && /\$pencil-design-layout-conformance/.test(readme) &&
   /\$html-design-layout-conformance/.test(readme));
 check('README requires source contract before broad codebase analysis',
   /before broad[\s\S]{0,80}codebase analysis/i.test(readme) &&

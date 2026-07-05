@@ -47,10 +47,10 @@ function writeMode(root, name, { itemsKey, skill, goal, configRel }) {
 
 function buildRoot(aCmd) {
   const root = mkdtempSync(join(tmpdir(), 'pbflow-'));
-  for (const d of ['scripts', 'memory', 'modes', 'skills', 'processes', 'artifacts/reports', 'flows']) {
+  for (const d of ['scripts', 'scripts/lib', 'memory', 'modes', 'skills', 'processes', 'artifacts/reports', 'flows']) {
     mkdirSync(join(root, d), { recursive: true });
   }
-  for (const f of ['scripts/pb.mjs', 'scripts/pb-daily-monitor.mjs', 'scripts/pb-flow.mjs', 'scripts/check-flow.mjs']) {
+  for (const f of ['scripts/pb.mjs', 'scripts/pb-daily-monitor.mjs', 'scripts/pb-flow.mjs', 'scripts/check-flow.mjs', 'scripts/lib/loop-lib.mjs']) {
     copyFileSync(resolve(repoRoot, f), join(root, f));
   }
   try { symlinkSync(resolve(repoRoot, 'node_modules'), join(root, 'node_modules')); } catch {}

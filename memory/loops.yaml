@@ -189,3 +189,31 @@ loops:
       count: 1
       ts: '2026-06-29T02:00:00.173Z'
     mode: attention-research
+  - id: loop-20260705-001
+    status: done
+    started_at: '2026-07-05T04:14:05.829Z'
+    closed_at: '2026-07-05T04:20:45.086Z'
+    goal: >-
+      Design the Wenmei revamp features (sidecar narration, changeset review, steering, vault
+      journal) as reviewable design docs per docs/revamp-phase-improvement-plan-04Jul2026.md
+    stop: >-
+      All four design docs exist in the Wenmei repo with required sections and their acceptance
+      checks pass
+    journal:
+      first_line: 67
+      last_line: 71
+    artifacts: artifacts/loops/loop-20260705-001
+    reason: null
+  - id: loop-20260705-002
+    status: done
+    started_at: '2026-07-05T09:56:24.753Z'
+    closed_at: '2026-07-05T10:52:03.808Z'
+    goal: Fix PR#1 review findings 1-8 (correctness + cleanup)
+    stop: >-
+      All 8 findings fixed, each gated by an executable acceptance_check that is red-before-green;
+      npm test + pb validate green
+    journal:
+      first_line: 72
+      last_line: 80
+    artifacts: artifacts/loops/loop-20260705-002
+    reason: null

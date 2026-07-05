@@ -31,11 +31,12 @@ function ok(name, cond, extra = '') {
 
 function baseRoot() {
   const root = mkdtempSync(join(tmpdir(), 'pbgen-'));
-  for (const d of ['scripts', 'memory', 'modes', 'skills', 'processes', 'artifacts/reports']) {
+  for (const d of ['scripts', 'scripts/lib', 'memory', 'modes', 'skills', 'processes', 'artifacts/reports']) {
     mkdirSync(join(root, d), { recursive: true });
   }
   copyFileSync(resolve(repoRoot, 'scripts/pb.mjs'), join(root, 'scripts/pb.mjs'));
   copyFileSync(resolve(repoRoot, 'scripts/pb-daily-monitor.mjs'), join(root, 'scripts/pb-daily-monitor.mjs'));
+  copyFileSync(resolve(repoRoot, 'scripts/lib/loop-lib.mjs'), join(root, 'scripts/lib/loop-lib.mjs'));
   try { symlinkSync(resolve(repoRoot, 'node_modules'), join(root, 'node_modules')); } catch {}
   copyFileSync(resolve(repoRoot, 'modes/coding.yaml'), join(root, 'modes/coding.yaml'));
   writeFileSync(join(root, 'skills/index.yaml'), 'skills: []\n');

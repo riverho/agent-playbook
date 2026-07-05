@@ -72,7 +72,7 @@ print('frontmatter_bad_count', len(bad))
 for x in bad[:30]: print(x)
 sys.exit(1 if bad else 0)
 `;
-  return run('python', ['-c', py], { cwd: ROOT });
+  return run(python, ['-c', py], { cwd: ROOT });
 }
 function navigationCheck(wiki) {
   const required = ['[[source-index]]', '[[article-index-', '[[entity-index]]', '[[topic-index]]', '[[daily-digest-'];
@@ -111,7 +111,7 @@ if (!fatal) {
   sections.push({ name: 'rss deep ingest', ...run(python, [resolve(wiki, 'scripts/rss_deep_ingest.py')], { dryRun: args.dryRun }) });
   sections.push({ name: 'blogwatcher db delta ingest', ...run(python, [resolve(wiki, 'scripts/blogwatcher_delta_ingest.py'), '--since', date, '--limit', String(args.limit)], { dryRun: args.dryRun }) });
   sections.push({ name: 'rebuild news indexes', ...run(python, [resolve(wiki, 'scripts/rebuild_news_indexes.py')], { dryRun: args.dryRun }) });
-  sections.push({ name: 'rss architecture check', ...run('python', [archCheck, wiki], { dryRun: args.dryRun }) });
+  sections.push({ name: 'rss architecture check', ...run(python, [archCheck, wiki], { dryRun: args.dryRun }) });
   sections.push({ name: 'frontmatter check', ...(args.dryRun ? { code: 0, out: '[dry-run] frontmatter check' } : frontmatterCheck(wiki)) });
   sections.push({ name: 'navigation check', ...(args.dryRun ? { code: 0, out: '[dry-run] navigation check' } : navigationCheck(wiki)) });
   sections.push({ name: 'counts', code: 0, out: `article_pages: ${countFiles(resolve(wiki, 'articles'))}\nraw_pages: ${countFiles(resolve(wiki, 'raw/articles'))}\nentity_pages: ${countFiles(resolve(wiki, 'entities'))}\nconcept_pages: ${countFiles(resolve(wiki, 'concepts'))}\nmeta_pages: ${countFiles(resolve(wiki, '_meta'))}` });

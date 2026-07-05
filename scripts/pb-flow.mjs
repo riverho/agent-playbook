@@ -16,8 +16,8 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
 import yaml from 'js-yaml';
+import { readActiveLoop, runNode } from './lib/loop-lib.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -56,34 +56,14 @@ function loadFlow(idOrPath) {
   return doc;
 }
 
-function activeLoop() {
-  const p = resolve(ROOT, 'memory/loops.yaml');
-  if (!existsSync(p)) return null;
-  const doc = yaml.load(readFileSync(p, 'utf8'));
-  if (!doc || !doc.active) return null;
-  return (doc.loops || []).find((l) => l.id === doc.active && l.status === 'active') || null;
-}
-
-function runPb(argv) {
-  try {
-    execFileSync(process.execPath, [PB, ...argv], { cwd: ROOT, encoding: 'utf8', stdio: 'pipe' });
-    return { code: 0 };
-  } catch (e) {
-    return { code: e.status ?? 1, out: `${e.stdout || ''}${e.stderr || ''}` };
-  }
-}
+const runPb = (argv) => runNode(PB, argv, { cwd: ROOT });
 
 function runStep(step, dryRun) {
   const argv = ['--mode', step.mode];
   if (step.input) argv.push('--input', step.input);
   if (step.output) argv.push('--output', step.output);
   if (dryRun) argv.push('--dry-run');
-  try {
-    const out = execFileSync(process.execPath, [MONITOR, ...argv], { cwd: ROOT, encoding: 'utf8', stdio: 'pipe' });
-    return { code: 0, out };
-  } catch (e) {
-    return { code: e.status ?? 1, out: `${e.stdout || ''}${e.stderr || ''}` };
-  }
+  return runNode(MONITOR, argv, { cwd: ROOT });
 }
 
 // ----------------------------------------------------------------------------
@@ -93,14 +73,16 @@ console.log(`[flow ${flowId}] ${flow.steps.length} step(s)`);
 
 // One loop epoch per flow run. Open it here so every step reuses it (the monitor
 // reuses an existing active loop). If a loop is already active, reuse it as-is.
-if (!args.dryRun && !activeLoop()) {
+let loop = args.dryRun ? null : readActiveLoop(ROOT);
+if (!args.dryRun && !loop) {
   const r = runPb(['loop', 'new', '--fresh', '--goal', `Flow: ${flowId}`, '--stop', 'All flow steps drained']);
   if (r.code !== 0) {
     console.error(`[flow ${flowId}] could not open loop epoch:\n${r.out || ''}`);
     process.exit(1);
   }
+  loop = readActiveLoop(ROOT);
 }
-const epoch = args.dryRun ? '(dry-run)' : (activeLoop()?.id || '(none)');
+const epoch = args.dryRun ? '(dry-run)' : (loop?.id || '(none)');
 console.log(`[flow ${flowId}] epoch: ${epoch}`);
 
 for (let i = 0; i < flow.steps.length; i++) {

@@ -101,6 +101,9 @@ update:
   repo: riverho/agent-playbook
 
 default_mode: coding
+# The reference mode pb-daily-monitor.mjs uses when invoked with no --mode. Declared
+# here (not baked into the engine) so the orchestrator carries no specific pack's id.
+default_monitor_mode: blogwatch
 modes:
   coding: modes/coding.yaml
   # demo — a second pack that mounts purely from YAML (its own skill + process under

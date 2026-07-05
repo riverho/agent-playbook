@@ -40,8 +40,8 @@ modes:
   - id: fable-5
     description: Fable 5 operating persona — verify before you claim, stay in scope, name the rollback.
     abstract: >-
-      Persona mode (no pack) — inherits every global engine skill/process; the verification, scope,
-      and judgment discipline lives entirely in its directive.
+      Persona mode (no pack) — inherits every global engine skill/process; verification/scope/judgment
+      discipline in its directive (scaled to blast radius), gated by a tests-green kind:check principle.
 
   - id: wiki-news
     description: Daily LLM Wiki news ingestion from blogwatcher + RSS sources.

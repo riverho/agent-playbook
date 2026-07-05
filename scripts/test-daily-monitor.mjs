@@ -18,11 +18,12 @@ const repoRoot = process.cwd();
 
 function buildRoot(watches) {
   const root = mkdtempSync(join(tmpdir(), 'pbdaily-'));
-  for (const d of ['scripts', 'memory', 'modes', 'skills', 'processes', 'artifacts/reports']) {
+  for (const d of ['scripts', 'scripts/lib', 'memory', 'modes', 'skills', 'processes', 'artifacts/reports']) {
     mkdirSync(join(root, d), { recursive: true });
   }
   copyFileSync(resolve(repoRoot, 'scripts/pb.mjs'), join(root, 'scripts/pb.mjs'));
   copyFileSync(resolve(repoRoot, 'scripts/pb-daily-monitor.mjs'), join(root, 'scripts/pb-daily-monitor.mjs'));
+  copyFileSync(resolve(repoRoot, 'scripts/lib/loop-lib.mjs'), join(root, 'scripts/lib/loop-lib.mjs'));
   try { symlinkSync(resolve(repoRoot, 'node_modules'), join(root, 'node_modules')); } catch {}
   copyFileSync(resolve(repoRoot, 'modes/coding.yaml'), join(root, 'modes/coding.yaml'));
   copyFileSync(resolve(repoRoot, 'modes/blogwatch.yaml'), join(root, 'modes/blogwatch.yaml'));
@@ -43,6 +44,7 @@ function buildRoot(watches) {
     'paths:',
     '  artifacts: artifacts',
     'default_mode: coding',
+    'default_monitor_mode: blogwatch',
     'modes:',
     '  coding: modes/coding.yaml',
     '  blogwatch: modes/blogwatch.yaml',
