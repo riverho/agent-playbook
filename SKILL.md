@@ -58,6 +58,16 @@ A task's `acceptance_checks` are **shell commands** (cwd = playbook root, exit 0
 4. If you had to improvise something reusable, **write a new skill + process** and add them to
    `skills/index.yaml` and `processes/index.yaml`. That is how the playbook learns.
 
+### Out-of-scope capture (the default)
+
+Never fix out-of-scope work inline: that breaks the smallest-change rule and un-scopes the diff.
+Always capture it, then finish the claimed task as scoped:
+- For defects and concrete work, create a new `todo` in `memory/backlog.yaml` through the triage
+  skill: reproduce first and give it an executable acceptance check that is RED before / GREEN after.
+- For a missing skill, process, or mode capability, log a `pending` proposal using the orchestrator's
+  gap → proposal pattern; build it in a separate loop.
+Out-of-scope observations are never silently dropped and never silently acted on.
+
 ## Guardrails (lightweight)
 
 - `pb validate` must stay green. It checks that the master, indices, and every referenced file

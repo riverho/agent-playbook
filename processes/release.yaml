@@ -36,27 +36,37 @@ canonical_steps:
     name: Bump version
     requirements:
       - Edit `package.json` — increment the `version` field following semver.
-      - Commit: `git commit -m "chore: bump version to X.Y.Z"`.
+      - Edit `playbook.yaml` — set `version: X.Y.Z` to the SAME value as `package.json`.
+        The release process bumps BOTH files in lockstep; bumping only
+        `package.json` reproduces version drift (this bit us in v0.3.5).
+      - Commit both edits together: `git commit -m "chore: bump version to X.Y.Z"`.
 
   - step: 3
+    name: Verify version sync
+    requirements:
+      - Run `node scripts/check-version-sync.mjs` — must exit 0.
+      - Confirms `package.json` and `playbook.yaml` agree on the new version.
+        Refuse to tag/release if this fails; fix the drift before continuing.
+
+  - step: 4
     name: Validate
     requirements:
       - Run `pb validate` — must stay green.
       - Run `node scripts/pb.mjs status` — engine must load cleanly.
 
-  - step: 4
+  - step: 5
     name: Tag
     requirements:
       - Create an annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z — <short description>"`.
       - Push branch and tag together: `git push origin main && git push origin vX.Y.Z`.
 
-  - step: 5
+  - step: 6
     name: Publish GitHub release
     requirements:
       - Run `gh release create vX.Y.Z --title "vX.Y.Z" --notes "<release notes>"`.
       - Confirm the release appears at https://github.com/<owner>/<repo>/releases.
 
-  - step: 6
+  - step: 7
     name: Record
     requirements:
       - If this was a backlog task, run `pb record --task <id> --action release --status done --notes "released vX.Y.Z"`.
