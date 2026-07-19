@@ -1,0 +1,59 @@
+name: watch-feeds
+version: 1.0.0
+purpose: >-
+  Monitor blogwatcher feeds and x.com (Twitter) accounts for relevant signals,
+  then record structured alerts in the playbook journal.
+
+applies_to:
+  - blogwatch-mode tasks that involve feed or social monitoring
+
+required_inputs:
+  - the exact sources to monitor (feeds, handles, search terms)
+  - the matching criteria (keywords, topics, thresholds)
+  - the active task id for recording
+
+canonical_steps:
+  - step: 1
+    name: Orient
+    requirements:
+      - Run `pb status` to confirm active mode is `blogwatch`.
+      - Read the watch criteria from the task notes or user request.
+
+  - step: 2
+    name: Identify sources
+    requirements:
+      - List each blogwatcher feed URL and x.com handle/search to monitor.
+
+  - step: 3
+    name: Fetch latest items
+    requirements:
+      - Use the user's own browser, API access, or provided tools to gather the latest items.
+      - Do not install new dependencies inside the playbook folder.
+      - Do not store credentials in the playbook folder.
+
+  - step: 4
+    name: Filter and capture
+    requirements:
+      - Keep only items that match the criteria.
+      - Capture source URL, timestamp, author/handle, and verbatim excerpt for each match.
+
+  - step: 5
+    name: Classify
+    requirements:
+      - Label each match as `info`, `lead`, or `anomaly`.
+
+  - step: 6
+    name: Record
+    requirements:
+      - Log findings with `pb record --task <id> --action watch --status done --notes "<structured notes>"`.
+      - If follow-up is needed, add a new backlog task with `pb plan`.
+
+  - step: 7
+    name: Escalate anomalies
+    requirements:
+      - Surface `anomaly`-class findings to the user with evidence immediately.
+
+acceptance_checks:
+  - node scripts/check-blogwatch-mode.mjs
+  - node scripts/test-blogwatch-pack.mjs
+  - node scripts/pb.mjs validate

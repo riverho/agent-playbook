@@ -1,0 +1,24 @@
+# ============================================================================
+#  modes/blogwatch/config/daily-watches.yaml — daily watch list
+# ----------------------------------------------------------------------------
+#  Each watch becomes one backlog task during the daily monitor run. The
+#  `check` command is the task's executable acceptance check: it must fetch or
+#  inspect the source and exit 0 only when the watch criteria are satisfied.
+#
+#  Credentials MUST come from environment variables inside the `check` command,
+#  never from this file. Example:
+#    check: node ./my-fetcher.mjs --feed x.com/@handle --token "$X_TOKEN"
+# ============================================================================
+
+watches:
+  - id: blogwatch-example
+    source: blogwatcher://example-feed
+    criteria: posts mentioning "agent-playbook"
+    # Placeholder heartbeat — replace with a real fetch/inspect command.
+    check: node -e "console.log('heartbeat blogwatch-example'); process.exit(0)"
+
+  - id: x-com-example
+    source: x.com/@example
+    criteria: posts mentioning "agent-playbook"
+    # Placeholder heartbeat — replace with a real fetch/inspect command.
+    check: node -e "console.log('heartbeat x-com-example'); process.exit(0)"

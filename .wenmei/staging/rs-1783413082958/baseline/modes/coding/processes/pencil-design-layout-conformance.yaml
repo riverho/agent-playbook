@@ -1,0 +1,122 @@
+name: pencil-design-layout-conformance
+version: 1.0.0
+purpose: >-
+  Convert an approved Pencil design and component mapping into an executable layout contract,
+  then gate each implemented screen against geometry, visual, responsive, interaction, and human
+  judgment evidence.
+
+position:
+  after:
+    - DESIGN.md is approved and layout tokens are sufficient for the designed screens.
+    - Pencil mockups are approved for required viewports and meaningful UI states.
+  before:
+    - Broad implementation-oriented codebase analysis or pattern mining.
+    - Production screen implementation beyond the single golden reference screen.
+  guides:
+    - Contract-guided analysis that maps declared regions to canonical components, examples, deprecations, and test harnesses.
+  returns_during:
+    - Verification of every production screen slice and any later layout-affecting change.
+
+inputs:
+  - DESIGN.md and the target repository's design tokens and component APIs.
+  - Stable Pencil file, frame, and node identifiers plus approved reference screenshots.
+  - Approved feature/region inventory with intended states and responsive behavior; production component mapping is completed during this process.
+  - Target viewport, device-scale, browser, font, asset, and fixture requirements.
+
+outputs:
+  - id: layout-contract
+    path: design-contract.yaml
+    requirement: >-
+      Machine-readable screen records created before broad analysis with source.kind pencil,
+      Pencil provenance, viewport/state matrix, critical geometry relationships, tolerances,
+      responsive rules, and gates; add production component mapping during bounded analysis.
+  - id: golden-screen
+    requirement: >-
+      One compilable reference screen using real production components and deterministic fixtures.
+  - id: verification-command
+    requirement: >-
+      One target-repository command that runs geometry, screenshot, responsive, and relevant
+      interaction checks and exits nonzero on conformance failure.
+  - id: evidence
+    requirement: >-
+      Actual commands, exit codes, diff artifacts, and a separate human visual attestation.
+
+canonical_steps:
+  - step: 1
+    name: Confirm the handoff boundary
+    requirements:
+      - Verify DESIGN.md and Pencil frames/states are approved and mutually consistent before reading implementation patterns.
+      - List missing states, breakpoints, regions, or layout tokens and stop if the source contract would require invention.
+      - Announce the current stage as contract preparation; do not announce readiness yet.
+
+  - step: 2
+    name: Capture Pencil provenance and layout
+    requirements:
+      - Use Pencil MCP to read stable frame/node IDs and structural layout for the smallest meaningful frames.
+      - Capture approved screenshots only after each complete frame or state is ready.
+      - Record reference viewport, frame size, hierarchy, bounds, gaps, padding, alignment, overflow, and clipping.
+      - Preserve the Pencil file identity and reference revision or checksum so stale baselines are detectable.
+
+  - step: 3
+    name: Write the source-side design-contract.yaml
+    requirements:
+      - Create design-contract.yaml with source.kind pencil before broad implementation-oriented codebase analysis.
+      - Create machine-readable records for each screen, viewport, and required UI state.
+      - Express critical geometry as relationships where possible (aligned edges, contained regions, grid gaps, max widths) rather than brittle whole-DOM coordinates.
+      - Declare explicit pixel or ratio tolerances; never hide tolerance changes inside test code.
+      - Identify each semantic visual region and leave unresolved production-component fields explicit rather than guessing from nearby code.
+
+  - step: 4
+    name: Analyze the codebase through the contract
+    requirements:
+      - Inspect only the canonical component library/public APIs, deprecated paths, compilable examples, design tokens, and relevant test harness needed by contract regions.
+      - Map every contract region to a production component or explicitly approved layout wrapper and record variants and invalid combinations.
+      - Do not use legacy prevalence or the nearest screen as authority to rewrite the approved Pencil layout.
+      - Stop when the codebase cannot satisfy a region without a new primitive or explicit design decision.
+
+  - step: 5
+    name: Stabilize the rendering environment
+    requirements:
+      - Lock browser/runtime version, viewport, device scale, fonts, assets, locale, timezone, fixture data, and feature flags.
+      - Disable or settle animation, transitions, timestamps, random values, and network-dependent content.
+      - Fail with a setup diagnosis when fonts or assets are missing instead of accepting a shifted baseline.
+
+  - step: 6
+    name: Build and prove one golden screen
+    requirements:
+      - Implement one representative screen with the mapped production components and layout tokens.
+      - Run compile/static checks, DOM geometry assertions, screenshot comparison, responsive cases, and relevant interactions.
+      - Make failures repair-oriented by reporting Pencil reference, expected relationship or bounds, actual result, tolerance, and likely component/layout primitive.
+      - Intentionally perturb one critical layout value and confirm the conformance command fails before restoring it.
+      - Announce LAYOUT CONTRACT READY only after the restored golden screen passes the single verification command.
+
+  - step: 7
+    name: Implement production screen slices
+    requirements:
+      - Build from the golden screen and mapped primitives; do not recreate existing components.
+      - Implement all contracted responsive and content states, not only the desktop populated state.
+      - Add each screen to the same conformance command before treating the slice as complete.
+
+  - step: 8
+    name: Close the conformance gate
+    requirements:
+      - Run geometry checks to localize shifts and screenshot diffs to detect unanticipated visual drift.
+      - Run interaction checks for focus, keyboard, overflow, expansion, and state transitions when relevant.
+      - Review the diff for weakened thresholds, regenerated baselines, deleted assertions, suppressions, and bypassed checks.
+      - Record human visual attestation separately; green automation does not prove design judgment.
+      - Announce LAYOUT CONFORMANCE PASSED only with command, zero exit code, diff evidence, and attestation.
+
+failure_policy:
+  - Missing or contradictory Pencil/component inputs block implementation; do not infer the design.
+  - Any unexplained geometry or screenshot difference fails the gate.
+  - Baseline updates require an intentional approved design change with new Pencil provenance.
+  - Visual thresholds may not be loosened solely to obtain green.
+
+acceptance:
+  contract_gate:
+    - Layout contract covers every required screen state and viewport with stable Pencil provenance.
+    - Golden screen compiles and the verification command demonstrably catches a deliberate shift.
+  conformance_gate:
+    - Geometry, visual, responsive, static, and applicable interaction checks exit zero.
+    - Anti-gaming review finds no weakened proof.
+    - Human visual attestation records who, when, and what was approved.

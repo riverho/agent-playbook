@@ -1,0 +1,19 @@
+# ============================================================================
+#  modes/demo.yaml — a second, NON-coding pack.
+# ----------------------------------------------------------------------------
+#  Its sole job is to PROVE the Stage-2 seam: a pack carrying its own skill +
+#  process mounts with ZERO pb.mjs change. Everything below is data; the engine
+#  has no knowledge of "demo". Skills/processes resolve via the active-mode ∪
+#  engine union built in pack-resolution. Carry-on: pure md + yaml.
+# ============================================================================
+id: demo
+description: Demonstration pack — proves a non-coding pack mounts purely from YAML.
+directive: |
+  You are operating in the demo pack. This persona is supplied entirely by the
+  pack's own YAML; the engine has no branch that knows about it.
+skills_index: modes/demo/skills/index.yaml
+processes_index: modes/demo/processes/index.yaml
+principles:
+  - id: prove_the_seam
+    kind: advice
+    text: This pack exists to demonstrate composition — keep it minimal and carry-on.

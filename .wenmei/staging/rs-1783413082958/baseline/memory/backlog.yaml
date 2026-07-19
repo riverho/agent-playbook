@@ -1,0 +1,228 @@
+# memory/backlog.yaml — the task queue the loop pulls from.
+# Managed by `pb` (next --claim / record). Edit by hand to add tasks.
+# status: todo | in_progress | blocked | done   priority: 1 = highest
+# acceptance_checks: shell commands that must exit 0 before `record --status done` succeeds.
+tasks:
+  - id: plan-20260629-001
+    title: Run morning attention research for project attention-research
+    status: todo
+    skill: daily-research-run
+    mode: attention-research
+    priority: 1
+    acceptance_checks:
+      - >-
+        node scripts/attention-research-daily.mjs --project attention-research --window morning --date
+        today --dry-run
+  - id: plan-20260705-001
+    title: >-
+      Design doc: Phase A sidecar narration — tee PTY terminal-output + sandbox-files-changed into Pi
+      RPC session; commentary UI in PiPanel; opt-in per terminal; rate-limiting/chunking and ANSI/TUI
+      noise handling
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 1
+    acceptance_checks:
+      - test -f /Users/river/.openclaw/workspace/projects/wenmei/docs/design/narration-sidecar.md
+      - >-
+        grep -q '## Event flow'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/narration-sidecar.md
+      - >-
+        grep -q '## Touch points'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/narration-sidecar.md
+      - >-
+        grep -q '## Open questions'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/narration-sidecar.md
+      - sh -c "test $(wc -w < /Users/river/.openclaw/workspace/projects/wenmei/docs/design/narration-sidecar.md) -ge 400"
+  - id: plan-20260705-002
+    title: >-
+      Design doc: Phase B changeset staging + diff review — baseline snapshot strategy under
+      .wenmei/staging, per-file approve/reject reusing trash/restore, run timeline from action log, Pi
+      risk annotations
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 2
+    acceptance_checks:
+      - test -f /Users/river/.openclaw/workspace/projects/wenmei/docs/design/changeset-review.md
+      - >-
+        grep -q '## Event flow'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/changeset-review.md
+      - >-
+        grep -q '## Touch points'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/changeset-review.md
+      - >-
+        grep -q '## Open questions'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/changeset-review.md
+      - sh -c "test $(wc -w < /Users/river/.openclaw/workspace/projects/wenmei/docs/design/changeset-review.md) -ge 400"
+  - id: plan-20260705-003
+    title: >-
+      Design doc: Phase C steering — sidecar keystroke injection into PTY with user confirmation,
+      draft-my-prompt flow, drift alerts, agent profiles (launch command + injection etiquette per
+      agent)
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 3
+    acceptance_checks:
+      - >-
+        test -f
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/steering-and-agent-profiles.md
+      - >-
+        grep -q '## Event flow'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/steering-and-agent-profiles.md
+      - >-
+        grep -q '## Touch points'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/steering-and-agent-profiles.md
+      - >-
+        grep -q '## Open questions'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/steering-and-agent-profiles.md
+      - sh -c "test $(wc -w < /Users/river/.openclaw/workspace/projects/wenmei/docs/design/steering-and-agent-profiles.md) -ge 400"
+  - id: plan-20260705-004
+    title: >-
+      Design doc: Phase D vault journal + foreman — Pi-maintained .wenmei/journal, auto-briefing pasted
+      into new workhorse sessions, multi-terminal status heuristics, night-shift staged batch runs (no
+      auto-commit)
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 4
+    acceptance_checks:
+      - test -f /Users/river/.openclaw/workspace/projects/wenmei/docs/design/vault-journal-memory.md
+      - >-
+        grep -q '## Event flow'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/vault-journal-memory.md
+      - >-
+        grep -q '## Touch points'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/vault-journal-memory.md
+      - >-
+        grep -q '## Open questions'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/vault-journal-memory.md
+      - sh -c "test $(wc -w < /Users/river/.openclaw/workspace/projects/wenmei/docs/design/vault-journal-memory.md) -ge 400"
+  # ---- PR#1 review findings 1-8 (loop-20260705-002) ----
+  - id: fix-v033-version-regex
+    title: "Finding 1: check-v033-conformance-docs README assertion tests old v0.3.3 literal, not 0.3.5"
+    status: todo
+    priority: 1
+    acceptance_checks:
+      - node scripts/test-review-fixes.mjs finding-1
+      - node scripts/check-v033-conformance-docs.mjs
+  - id: fix-wiki-python-venv
+    title: "Finding 2: wiki-news-daily frontmatter/architecture checks call bare python, not the venv python"
+    status: todo
+    priority: 2
+    acceptance_checks:
+      - node scripts/test-review-fixes.mjs finding-2
+      - node scripts/wiki-news-daily.mjs --dry-run
+  - id: fix-cmdnext-skillformode
+    title: "Finding 5: cmdNext resolves display skill with active-mode skillFor, not skillForMode(candidate.mode)"
+    status: todo
+    priority: 3
+    acceptance_checks:
+      - node scripts/test-review-fixes.mjs finding-5
+      - npm test
+  - id: fix-validate-memoize
+    title: "Finding 8: runValidate re-parses the skills catalog per task; memoize skill resolution per mode"
+    status: todo
+    priority: 4
+    acceptance_checks:
+      - node scripts/test-review-fixes.mjs finding-8
+      - node scripts/pb.mjs validate
+      - npm test
+  - id: fix-monitor-hardcoded-defaults
+    title: "Finding 7: pb-daily-monitor hardcodes DEFAULT_MONITOR_MODE=blogwatch + absolute WORKSPACE_PROJECTS; check-attention-research-mode hardcodes an absolute path"
+    status: todo
+    priority: 5
+    acceptance_checks:
+      - node scripts/test-review-fixes.mjs finding-7
+      - node scripts/pb-daily-monitor.mjs --dry-run --mode blogwatch
+      - npm test
+  - id: fix-project-relative-config
+    title: "Finding 4: project.yaml-declared config paths resolved against playbook ROOT, not the project root"
+    status: todo
+    priority: 6
+    acceptance_checks:
+      - node scripts/test-project-relative-config.mjs
+  - id: fix-scaffold-field-validation
+    title: "Finding 3: generalized loadConfig dropped the guard that goal_template fields are present; empty substitutions silently queue meaningless tasks"
+    status: todo
+    priority: 7
+    acceptance_checks:
+      - node scripts/test-scaffold-field-validation.mjs
+  - id: fix-extract-loop-lib
+    title: "Finding 6: activeLoop()/pb-spawn helper triplicated across pb-flow, pb-daily-monitor, pb.mjs; extract to scripts/lib"
+    status: todo
+    priority: 8
+    acceptance_checks:
+      - node scripts/test-review-fixes.mjs finding-6
+      - node scripts/test-flow-runner.mjs
+      - npm test
+  # ---- L1 "Pack artifact" (docs/pb-improvements-04072026.md §8.2, epoch/v0.3.6-pack-artifact) ----
+  - id: pack-manifest-schema
+    title: "A1: pack.yaml manifest for modes/<id>/ — id, semver version, engine_range, files list, config_schema, license, provenance; blogwatch as reference"
+    status: todo
+    priority: 1
+    acceptance_checks:
+      - node scripts/check-pack-manifest.mjs blogwatch
+      - node scripts/test-pack-manifest.mjs
+      - node scripts/pb.mjs validate
+  - id: pb-mode-list-alias
+    title: "E1b: `pb mode list` as first-class alias of `pb list modes` (matches pb mode show|skills|processes grammar)"
+    status: todo
+    priority: 2
+    acceptance_checks:
+      - sh -c "node scripts/pb.mjs mode list > /tmp/pb-a.txt && node scripts/pb.mjs list modes > /tmp/pb-b.txt && diff /tmp/pb-a.txt /tmp/pb-b.txt"
+      - npm test
+  - id: release-version-sync
+    title: "Fix processes/release.yaml to bump BOTH package.json and playbook.yaml, and add a version-sync check so drift fails red (gap found in v0.3.5 release)"
+    status: todo
+    priority: 3
+    acceptance_checks:
+      - node scripts/check-version-sync.mjs
+      - sh -c "grep -q 'playbook.yaml' processes/release.yaml"
+      - node scripts/pb.mjs validate
+  - id: pack-build
+    title: "A2: `pb pack build <id>` — dist/<id>-<version>.pbpack tarball with manifest at root + SHA-256 file; refuses out-of-dir references and absolute paths"
+    status: todo
+    priority: 4
+    depends_on: [pack-manifest-schema]
+    acceptance_checks:
+      - node scripts/test-pack-build.mjs
+      - node scripts/pb.mjs validate
+  - id: pack-install
+    title: "A3: `pb pack install <file>` — verify sha256 + engine_range, unpack into modes/, register in playbook.yaml modes map + modes/index.yaml; idempotent, semver upgrade, refuse downgrade without --force"
+    status: todo
+    priority: 5
+    depends_on: [pack-build]
+    acceptance_checks:
+      - node scripts/test-pack-install.mjs
+      - node scripts/pb.mjs validate
+  - id: pack-roundtrip-proof
+    title: "L1 loop proof: build blogwatch, install into a scratch playbook, pb validate + scaffold dry-run green there"
+    status: todo
+    priority: 6
+    depends_on: [pack-install]
+    acceptance_checks:
+      - node scripts/test-pack-roundtrip.mjs
+      - npm test
+  - id: hardening-claim-anchor
+    title: "Carried (S11 hardening): add a 'claim is not verification' line to `pb anchor --brief`"
+    status: todo
+    priority: 7
+    acceptance_checks:
+      - sh -c "node scripts/pb.mjs anchor --brief | grep -qi 'claim'"
+      - npm test
+  - id: hardening-capture-default
+    title: "Carried (S11 hardening): decide + document the out-of-scope capture default in SKILL.md"
+    status: todo
+    priority: 8
+    acceptance_checks:
+      - sh -c "grep -qi 'out-of-scope' SKILL.md"
+      - node scripts/pb.mjs validate
+  # ---- triaged findings (loop-20260705-003) ----
+  - id: fix-claim-depends-on-guard
+    title: "Finding: `pb next --claim` serves tasks whose depends_on are not done (pack-install/roundtrip were claimable while pack-build was in_progress); claim guard must skip dep-unmet tasks"
+    status: todo
+    priority: 9
+    acceptance_checks:
+      - node scripts/test-next-claim-guard.mjs

@@ -1,0 +1,14 @@
+# Pack-local process index for the wiki-news pack. Registered ONLY here.
+
+processes:
+  - id: daily-wiki-refresh
+    file: modes/wiki-news/processes/daily-wiki-refresh.yaml
+    owner: wiki-news
+
+  - id: wiki-news-ingest
+    file: modes/wiki-news/processes/wiki-news-ingest.yaml
+    owner: wiki-news
+
+  - id: wiki-news-verify
+    file: modes/wiki-news/processes/wiki-news-verify.yaml
+    owner: wiki-news

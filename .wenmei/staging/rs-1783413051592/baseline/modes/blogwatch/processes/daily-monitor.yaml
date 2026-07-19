@@ -1,0 +1,49 @@
+name: daily-monitor
+version: 1.0.0
+purpose: >-
+  Run the closed-loop daily monitoring orchestrator: heartbeat, activate blogwatch
+  mode, build a daily backlog from config, drain it with auto-run, and surface errors.
+
+applies_to:
+  - daily monitoring tasks in blogwatch mode
+
+required_inputs:
+  - watch config file (default: modes/blogwatch/config/daily-watches.yaml)
+  - active or creatable loop
+
+canonical_steps:
+  - step: 1
+    name: Heartbeat
+    requirements:
+      - Print an ISO timestamp and the active mode to stdout.
+
+  - step: 2
+    name: Activate
+    requirements:
+      - Ensure an active loop exists; create one if needed with a daily goal/stop.
+      - Ensure a cycle brief exists and Q5 is answered.
+      - Run `pb mode set blogwatch`.
+
+  - step: 3
+    name: Build daily backlog
+    requirements:
+      - Read the watch config.
+      - For each watch, run `pb plan --goal "Monitor <source> for <criteria>" --skill watch-feeds --check "<watch.check>"`.
+
+  - step: 4
+    name: Drain backlog
+    requirements:
+      - Run `pb loop run --auto --defer-blocked`.
+
+  - step: 5
+    name: Surface errors and reflect
+    requirements:
+      - Append errors to `artifacts/reports/orchestrator-errors.ndjson`.
+      - Append a run reflection to `artifacts/reports/orchestrator-reflections.ndjson`.
+      - Append any process/skill change proposals to `artifacts/reports/orchestrator-iterations.ndjson`.
+      - Print a summary and exit non-zero if any task is blocked or todo.
+
+acceptance_checks:
+  - node scripts/test-daily-monitor.mjs
+  - node scripts/check-blogwatch-mode.mjs
+  - node scripts/pb.mjs validate

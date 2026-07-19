@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pencil Design Layout Conformance"
+  short_description: "Verify Pencil layouts against real app screens"
+  default_prompt: "Use $pencil-design-layout-conformance to turn an approved Pencil mockup into an executable layout contract and verification gate."

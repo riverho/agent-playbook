@@ -1,0 +1,188 @@
+{
+  "plan-20260629-001": {
+    "status": "done",
+    "loop_id": "loop-20260629-002",
+    "claimed_at": "2026-06-29T02:00:00.626Z",
+    "updated_at": "2026-06-29T02:00:00.746Z"
+  },
+  "plan-20260705-001": {
+    "status": "done",
+    "loop_id": "loop-20260705-001",
+    "claimed_at": "2026-07-05T04:16:09.857Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T04:17:41.313Z"
+  },
+  "plan-20260705-002": {
+    "status": "done",
+    "loop_id": "loop-20260705-001",
+    "claimed_at": "2026-07-05T04:17:41.428Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T04:18:43.755Z"
+  },
+  "plan-20260705-003": {
+    "status": "done",
+    "loop_id": "loop-20260705-001",
+    "claimed_at": "2026-07-05T04:18:43.872Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T04:19:47.603Z"
+  },
+  "plan-20260705-004": {
+    "status": "done",
+    "loop_id": "loop-20260705-001",
+    "claimed_at": "2026-07-05T04:19:47.715Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T04:20:44.856Z"
+  },
+  "fix-v033-version-regex": {
+    "status": "done",
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:01:41.769Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T10:03:10.838Z"
+  },
+  "fix-wiki-python-venv": {
+    "status": "done",
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:03:10.953Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T10:04:44.354Z"
+  },
+  "fix-cmdnext-skillformode": {
+    "status": "done",
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:04:44.469Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T10:06:16.322Z"
+  },
+  "fix-validate-memoize": {
+    "status": "done",
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:06:16.460Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T10:08:31.501Z"
+  },
+  "fix-monitor-hardcoded-defaults": {
+    "status": "done",
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:08:31.645Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T10:13:09.041Z"
+  },
+  "fix-project-relative-config": {
+    "status": "done",
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:13:09.179Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T10:17:06.104Z"
+  },
+  "fix-scaffold-field-validation": {
+    "status": "done",
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:17:06.221Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T10:19:48.109Z"
+  },
+  "fix-extract-loop-lib": {
+    "status": "done",
+    "loop_id": "loop-20260705-002",
+    "claimed_at": "2026-07-05T10:19:48.226Z",
+    "claimed_by": "agent",
+    "agent_id": "agent",
+    "mode": "coding",
+    "updated_at": "2026-07-05T10:49:56.205Z"
+  },
+  "pack-manifest-schema": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:24:25.037Z",
+    "claimed_by": "codex",
+    "agent_id": "codex",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:30:59.123Z"
+  },
+  "pb-mode-list-alias": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:24:25.464Z",
+    "claimed_by": "claude",
+    "agent_id": "claude",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:31:11.011Z"
+  },
+  "release-version-sync": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:24:25.860Z",
+    "claimed_by": "opencode",
+    "agent_id": "opencode",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:30:59.485Z"
+  },
+  "pack-build": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:31:41.185Z",
+    "claimed_by": "codex",
+    "agent_id": "codex",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:36:05.329Z"
+  },
+  "pack-install": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:31:41.345Z",
+    "claimed_by": "claude",
+    "agent_id": "claude",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:49:14.814Z"
+  },
+  "pack-roundtrip-proof": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:31:41.500Z",
+    "claimed_by": "opencode",
+    "agent_id": "opencode",
+    "mode": "coding",
+    "updated_at": "2026-07-06T04:20:34.482Z"
+  },
+  "hardening-claim-anchor": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:51:04.775Z",
+    "claimed_by": "claude",
+    "agent_id": "claude",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:55:27.382Z"
+  },
+  "hardening-capture-default": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:51:04.901Z",
+    "claimed_by": "codex",
+    "agent_id": "codex",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:57:26.903Z"
+  }
+}

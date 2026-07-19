@@ -1,0 +1,55 @@
+{
+  "name": "agents-playbook",
+  "version": "0.3.6",
+  "type": "module",
+  "description": "A portable, agent-first playbook engine: a master playbook.yaml that indexes skills + processes, a friction-free loop CLI with enforced executable acceptance checks, and agent records that roll up into human reports. Everything lives in the folder (carry-on).",
+  "keywords": [
+    "agent",
+    "playbook",
+    "skills",
+    "loop",
+    "automation"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/riverho/agent-playbook.git"
+  },
+  "homepage": "https://github.com/riverho/agent-playbook#readme",
+  "bugs": {
+    "url": "https://github.com/riverho/agent-playbook/issues"
+  },
+  "bin": {
+    "pb": "scripts/pb.mjs"
+  },
+  "scripts": {
+    "status": "node scripts/pb.mjs status",
+    "next": "node scripts/pb.mjs next",
+    "validate": "node scripts/pb.mjs validate",
+    "report": "node scripts/pb.mjs report",
+    "list": "node scripts/pb.mjs list",
+    "update": "node scripts/pb.mjs update",
+    "init": "node scripts/pb.mjs init",
+    "link": "npm link",
+    "unlink": "npm rm -g agents-playbook",
+    "test": "node scripts/test-anchor-selective.mjs && node scripts/test-hollow-validate.mjs && node scripts/test-q5.mjs && node scripts/test-report-gates.mjs && node scripts/test-loop-epochs.mjs && node scripts/test-next-claim-guard.mjs && node scripts/test-loop-fresh.mjs && node scripts/test-mode-plan-validation.mjs && node scripts/test-trust-safety.mjs && node scripts/test-autonomous-loop.mjs && node scripts/test-win32-runner.mjs && node scripts/test-pack-manifest.mjs && node scripts/test-pack-build.mjs && node scripts/test-pack-install.mjs && node scripts/test-pack-roundtrip.mjs"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "files": [
+    "playbook.yaml",
+    "SKILL.md",
+    "AGENTS.md",
+    "README.md",
+    "INSTALL.md",
+    "modes/",
+    "scripts/",
+    "processes/",
+    "skills/",
+    "memory/project-memory.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

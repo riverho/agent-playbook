@@ -1,0 +1,72 @@
+# processes/use-playbook.yaml
+# How to drive the agent-playbook from natural-language requests.
+# The skill (skills/nl/SKILL.md) is the agent-facing doc; this is the canonical
+# process shape and the step contract.
+name: use-playbook
+version: 1.0.0
+purpose: >-
+  Translate a natural-language utterance into the right playbook step(s) and
+  the corresponding `pb` command(s), so a conversational agent (or human) can
+  operate the loop without memorising the CLI. Read-only intent matching plus
+  command execution; never modifies the playbook state directly.
+
+source_of_truth:
+  master: playbook.yaml
+  memory: memory/project-memory.md
+  skill: skills/nl/SKILL.md
+  matcher: scripts/lib/nl-router.mjs
+
+applies_to:
+  - any conversational request that maps onto the playbook loop or its CLI
+
+required_inputs:
+  - a natural-language utterance (string)
+  - the current context (current task id if claimed; the active loop_id; etc.)
+  - optional: a fallback to `help` when no intent matches
+
+canonical_steps:
+  - step: 1
+    name: Normalise
+    requirements:
+      - Trim and collapse whitespace; preserve original casing in a copy for the journal if needed.
+      - Strip quotes used as user "filler" (e.g. `"is it green?"` → `is it green?`).
+
+  - step: 2
+    name: Match intent
+    requirements:
+      - "Walk the intent table top-to-bottom (precedence matters — see skill doc)."
+      - "The agent may shell to the canonical matcher for transparency: `node scripts/lib/nl-router.mjs <utterance>` prints intent + commands + matched + hints."
+      - The first intent whose `patterns` (regex set) hit the normalised text wins.
+      - "If no intent matches, return intent=unknown with hints (top-3 closest intents by token overlap)."
+
+  - step: 3
+    name: Fill placeholders
+    requirements:
+      - Substitute `<id>` from the current claimed task (or the user-mentioned id).
+      - Substitute `<goal>`, `<stop>`, `<reason>`, `<lesson>`, `<dir>` from the surrounding context (prior turn, current cycle brief, etc.).
+      - If a required placeholder cannot be resolved, surface a clarifying question — do not guess.
+
+  - step: 4
+    name: Run the command(s)
+    requirements:
+      - Execute the resolved `pb` command(s) via shell. Read-only intents (orient, report, help, verify) do not require re-anchor; mutation intents (record, plan, cycle, loop, scaffold, learn) should be preceded by `pb anchor --brief`.
+      - For multi-command intents (e.g. `claim` → `next --claim` then act on the printed task), run them in order and surface each output to the caller.
+      - On non-zero exit, surface the stderr; do not swallow it.
+
+  - step: 5
+    name: Confirm and re-anchor
+    requirements:
+      - After mutation, re-run `pb status` (orient) to confirm the journal/backlog reflects the change.
+      - On long sessions, prefer `pb anchor --brief` over `pb status` for cost.
+
+acceptance_checks:
+  - "`node scripts/lib/nl-router.mjs \"what's next?\"` returns `intent: \"select\"`."
+  - "`node scripts/lib/nl-router.mjs \"claim the next task\"` returns `intent: \"claim\"` (not `select`)."
+  - "`node scripts/lib/nl-router.mjs \"is it green?\"` returns `intent: \"verify\"`."
+  - "`node scripts/lib/nl-router.mjs \"validate task oc-plugin\"` returns `intent: \"verify-task\"` (not `verify`)."
+  - "`node scripts/lib/nl-router.mjs \"it is blocked\"` returns `intent: \"record-blocked\"` (not `record-done`)."
+  - "`node scripts/lib/nl-router.mjs \"new phase\"` returns `intent: \"cycle-new\"` (not `loop-new`)."
+  - "`node scripts/lib/nl-router.mjs \"I learned that X\"` returns `intent: \"learn\"`."
+  - "`node scripts/lib/nl-router.mjs \"xyzzy nothing\"` returns `intent: \"unknown\"` with `hints`."
+  - "`node scripts/check-nl-skill.mjs` exits 0."
+  - "`node scripts/pb.mjs validate` exits 0."

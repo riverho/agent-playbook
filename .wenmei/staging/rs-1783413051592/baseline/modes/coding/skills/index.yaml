@@ -1,0 +1,15 @@
+# Pack-local coding skills. Engine operations remain registered globally and
+# are composed with this index while coding mode is active.
+skills:
+  - id: code-conformance
+    file: modes/coding/skills/code-conformance/SKILL.md
+    process: code-conformance
+    summary: Make code changes conform through the repository's executable harness.
+  - id: pencil-design-layout-conformance
+    file: modes/coding/skills/pencil-design-layout-conformance/SKILL.md
+    process: pencil-design-layout-conformance
+    summary: Gate Pencil-to-app layout fidelity with executable geometry and visual evidence.
+  - id: html-design-layout-conformance
+    file: modes/coding/skills/html-design-layout-conformance/SKILL.md
+    process: html-design-layout-conformance
+    summary: Gate canonical HTML-to-app layout fidelity with a versioned executable contract.

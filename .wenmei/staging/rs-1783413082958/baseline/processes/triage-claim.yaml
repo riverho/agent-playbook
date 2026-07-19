@@ -1,0 +1,94 @@
+# processes/triage-claim.yaml
+# The named route from PROSE to check-gated backlog tasks. Use it whenever work
+# arrives as narrative — a reflection's bug list, a user "fix these," a subagent
+# "COMPLETE", a code-review writeup — instead of as an already-claimed task.
+# Without this route, "prose -> task" is ad-hoc judgment, applied unevenly and
+# sloppily under time pressure. This makes it a single repeatable procedure.
+name: triage-claim
+version: 1.0.0
+purpose: >-
+  Convert narrative input into machine-tracked, executable-check-gated backlog
+  tasks — so every claimed item has a definition of done that exits 0, and the
+  loop never starts work from prose alone.
+
+source_of_truth:
+  master: playbook.yaml
+  memory: memory/project-memory.md
+  backlog: memory/backlog.yaml
+
+applies_to:
+  - a reflection or lesson that lists defects or follow-ups
+  - a user request naming multiple bugs/changes ("fix these three…")
+  - a subagent or reviewer report claiming work is done or flawed
+  - any narrative that implies work but carries no claimed task + acceptance_check
+
+# The discipline. These five points are the reason the route exists; a check
+# (scripts/check-triage-skill.mjs) asserts the process still encodes them.
+principles:
+  - id: evidence_not_prose
+    text: >-
+      Triage from the CITED EVIDENCE, not the summary. Open the files/journal/lessons the prose
+      points at and confirm each claim against the real symptom. Narrative over-reports — a
+      "bug" may be a design decision; a "COMPLETE" may be unverified.
+  - id: reproduce_first
+    text: >-
+      Reproduce each defect by its real path BEFORE planning a fix. If you cannot reproduce it,
+      say so and stop — do not queue a fix against an assumed cause.
+  - id: one_defect_one_check
+    text: >-
+      One defect = one task with its OWN acceptance_check that is RED before the fix and GREEN
+      after. Group into a single task only when one check legitimately covers them all. The check
+      is an executable command (exit 0 = pass), never prose. (See project-memory granularity rule.)
+  - id: skills_first
+    text: >-
+      Route each task to an existing skill/process. Only when none fits do you write a new
+      skill + process and register them — never free-form improvise and leave nothing reusable.
+  - id: escalate_only_on_gap
+    text: >-
+      Touch machinery (a skill/process/mode) ONLY when a defect reveals a missing capability.
+      Then log a `pending` proposal and build it in a SEPARATE loop — never edit machinery inline
+      while fixing a bug. An ordinary bug is fixed in the code under the existing skill.
+
+canonical_steps:
+  - step: 1
+    name: Gather + verify
+    requirements:
+      - Re-anchor: read playbook.yaml and memory/project-memory.md; run `pb status`.
+      - Open the cited evidence (files, memory/journal.ndjson, memory/lessons.ndjson). Treat every
+        claim as a hypothesis until you have read the code or reproduced the symptom (evidence_not_prose).
+      - Discard items that don't reproduce or turn out to be design decisions; say so explicitly.
+  - step: 2
+    name: Reproduce
+    requirements:
+      - For each surviving defect, reproduce it by the real entry path (reproduce_first).
+      - Capture the current baseline so "fixed" and "no regression" mean something later.
+  - step: 3
+    name: Split into checked tasks
+    requirements:
+      - One defect = one backlog task (one_defect_one_check); group only under a single covering check.
+      - Write each task's acceptance_check as an executable command that FAILS now (red) and will
+        PASS after the fix (green). Add via `pb plan --goal "…" --check "…"` or by editing the backlog.
+      - Route each task to an existing skill (skills_first); if none fits, note that a new skill/process
+        is needed.
+  - step: 4
+    name: Separate the machinery work
+    requirements:
+      - If a defect needs a capability that no skill/process/mode provides, do NOT fix it inline.
+      - Log a `pending` building-plan proposal (e.g. artifacts/reports/orchestrator-iterations.ndjson
+        for monitor gaps) and create a SEPARATE task to build it in its own loop (escalate_only_on_gap).
+  - step: 5
+    name: Claim + run + record
+    requirements:
+      - Claim one task at a time with `pb next --claim`; follow its skill/process.
+      - Verify with `pb validate` and `pb validate --task <id>`; record with `pb record`
+        (recording done re-runs the check and refuses on failure).
+  - step: 6
+    name: Roll up
+    requirements:
+      - When the batch is done, `pb reflect` so the lessons roll up, then `pb report`.
+
+acceptance_checks:
+  - Every defect that survived triage became a backlog task with an executable, red->green acceptance_check.
+  - No machinery (skill/process/mode) was edited inline; capability gaps were logged as proposals + separate tasks.
+  - "`pb validate` passes and each new task verifies via `pb validate --task <id>`."
+  - A journal entry records the triage outcome.

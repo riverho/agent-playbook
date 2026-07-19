@@ -1,0 +1,4 @@
+interface:
+  display_name: "HTML Design Layout Conformance"
+  short_description: "Verify HTML mockups against real app screens"
+  default_prompt: "Use $html-design-layout-conformance to turn approved canonical HTML into an executable design contract and app-screen verification gate."

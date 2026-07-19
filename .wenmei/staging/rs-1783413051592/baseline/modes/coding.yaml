@@ -1,0 +1,49 @@
+# ============================================================================
+#  modes/coding.yaml — the FIRST mode (the reference persona pack).
+# ----------------------------------------------------------------------------
+#  A mode is a persona pack mounted ON the invariant floor. It injects a
+#  `directive` (persona text) + style `principles` via the anchor. It NEVER
+#  weakens enforcement: the floor (claim -> process/skill -> eval -> done ->
+#  cycle) is invariant. There is no mode that skips acceptance_checks — that
+#  would change the North Star, i.e. start a different project.
+#
+#  Resolution: task.mode ?? loop.mode ?? master.default_mode (coding).
+# ============================================================================
+
+id: coding
+description: >-
+  Strict engineering. Prefer the smallest change that passes the acceptance
+  checks; verify by exit code, not prose. No scope creep, no unrequested docs.
+
+# directive — the persona text the anchor injects for this mode.
+# EMPTY BY INTENT: an empty directive means "inherit the host agent's system
+# prompt." It is a non-blocking placeholder, NOT a hollow gate — `pb mode show`
+# and the anchor treat it as "inherits host prompt" and exit 0. Fill this string
+# to override the host persona for this mode.
+directive: ""
+
+# Coding-domain workflows live in this pack. Engine-operation skills remain in
+# the global indices and are composed additively by the resolver:
+# `active_mode pack ∪ engine globals`.
+skills_index: modes/coding/skills/index.yaml
+processes_index: modes/coding/processes/index.yaml
+
+# principles — each is independently toggleable and explicitly typed:
+#   kind: advice  -> an anchor nudge only; never gates (e.g. style/altitude).
+#   kind: check   -> declares an executable `check:` command wired into mode
+#                    validation (kind:check is what keeps modes from going
+#                    faith-based — exit codes, not prose).
+principles:
+  - id: smallest_diff
+    kind: advice
+    text: Prefer the smallest change that satisfies the task's acceptance_checks.
+  - id: no_unrequested_comments
+    kind: advice
+    text: Do not add comments or docs the task did not ask for; match surrounding code.
+  - id: verify_with_exit_code
+    kind: advice
+    text: A task is done when its acceptance_checks exit 0 — trust exit codes over prose.
+  - id: tests_green
+    kind: check
+    text: The engine self-tests must pass before recording done.
+    check: npm test

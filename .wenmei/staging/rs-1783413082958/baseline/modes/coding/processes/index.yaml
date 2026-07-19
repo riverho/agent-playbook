@@ -1,0 +1,11 @@
+# Pack-local coding processes.
+processes:
+  - id: code-conformance
+    file: modes/coding/processes/code-conformance.yaml
+    owner: coding
+  - id: pencil-design-layout-conformance
+    file: modes/coding/processes/pencil-design-layout-conformance.yaml
+    owner: coding
+  - id: html-design-layout-conformance
+    file: modes/coding/processes/html-design-layout-conformance.yaml
+    owner: coding

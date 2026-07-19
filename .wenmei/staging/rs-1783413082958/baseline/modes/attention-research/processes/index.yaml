@@ -1,0 +1,8 @@
+processes:
+  - id: daily-research-run
+    file: modes/attention-research/processes/daily-research-run.yaml
+    owner: attention-research
+
+  - id: attention-research-verify
+    file: modes/attention-research/processes/attention-research-verify.yaml
+    owner: attention-research

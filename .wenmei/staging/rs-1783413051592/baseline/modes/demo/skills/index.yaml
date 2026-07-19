@@ -1,0 +1,7 @@
+# Pack-local skill index for the demo pack. Registered ONLY here — the engine's
+# global skills/index.yaml does not know about it. Visible only while `demo` is active.
+skills:
+  - id: demo-skill
+    file: modes/demo/skills/demo-skill/SKILL.md
+    process: demo-proc
+    summary: Pack-local demo skill — proof of Stage-2 composition.

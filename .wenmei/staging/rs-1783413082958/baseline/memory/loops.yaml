@@ -1,0 +1,235 @@
+active: null
+loops:
+  - id: loop-20260617-001
+    status: done
+    started_at: '2026-06-17T04:31:26.788Z'
+    closed_at: '2026-06-17T04:32:11.107Z'
+    goal: ''
+    stop: ''
+    journal:
+      first_line: 4
+      last_line: 5
+    artifacts: artifacts\loops\loop-20260617-001
+    reason: v0.3 implementation verified by npm test and pb validate
+  - id: loop-20260621-001
+    status: done
+    started_at: '2026-06-21T03:54:04.746Z'
+    closed_at: '2026-06-22T17:19:01.160Z'
+    goal: >-
+      Fix Windows .cmd/.bat shim + spaces-in-path execution in the runner; add durable rules; cover
+      pb run -- background path.
+    stop: >-
+      3 tasks recorded done; new self-test green on Windows; project-memory rules added; pb validate
+      green.
+    journal:
+      first_line: 6
+      last_line: 18
+    artifacts: artifacts/loops/loop-20260621-001
+    reason: >-
+      Windows runner hardening + OpenCode adapter + NL skill epoch complete; opening a fresh epoch
+      for the multi-agent + modes architecture.
+  - id: loop-20260622-001
+    status: done
+    started_at: '2026-06-22T17:19:12.277Z'
+    closed_at: '2026-06-28T07:51:40.176Z'
+    goal: >-
+      Make the playbook multi-agent and mode-aware. (1) MODE feature: inject a per-task/per-loop
+      persona 'directive' (system-prompt text) atop the invariant floor; ship 'coding' as the FIRST
+      mode with an intentionally-EMPTY directive (empty = inherit host agent's system prompt,
+      non-blocking placeholder). (2) MULTI-AGENT floor: agent identity, per-agent WIP, atomic claim,
+      mode-routed claiming so N host-spawned agents share ONE backlog safely. The enforcement floor
+      (claim->process/skill->eval->done->cycle) stays invariant; modes never weaken it.
+    stop: >-
+      modes/coding.yaml + default_mode + 'pb mode show/set' + anchor mode-line (ONE line in
+      --brief); agent_id/mode/claimed_by stamped on claims+journal; per-agent WIP; atomic claim
+      rejects a concurrent second claimer; mode-routed claiming; every task checker .mjs green; pb
+      validate green; recorded done; reflect run.
+    journal:
+      first_line: 19
+      last_line: 35
+    artifacts: artifacts/loops/loop-20260622-001
+    reason: null
+    mode: blogwatch
+  - id: loop-20260628-001
+    status: done
+    started_at: '2026-06-28T07:51:47.830Z'
+    closed_at: '2026-06-28T10:02:20.012Z'
+    goal: >-
+      Generalize the blogwatch orchestrator into a mode-agnostic flow runner: mode catalog+menu,
+      generic --mode scaffold, gap-to-proposal, flows/ with artifact-dir handoff
+    stop: >-
+      All four epoch tasks recorded done (acceptance_checks green) and blogwatch still drains via
+      the generic path with no regression
+    journal:
+      first_line: 36
+      last_line: 48
+    artifacts: artifacts/loops/loop-20260628-001
+    reason: null
+    reset_backlog:
+      archived_to: artifacts/loops/loop-20260628-001/backlog-snapshot-pre-fresh.yaml
+      count: 25
+      ts: '2026-06-28T07:51:47.843Z'
+  - id: loop-20260628-002
+    status: done
+    started_at: '2026-06-28T11:07:36.983Z'
+    closed_at: '2026-06-28T11:08:31.086Z'
+    goal: Create wiki-news mode and propose backlog scaffold consolidation
+    stop: wiki-news mode validates and scaffold proposal artifact exists
+    journal:
+      first_line: 49
+      last_line: 50
+    artifacts: artifacts/loops/loop-20260628-002
+    reason: wiki-news mode validates and scaffold proposal artifact exists
+  - id: loop-20260628-003
+    status: done
+    started_at: '2026-06-28T15:07:17.120Z'
+    closed_at: '2026-06-28T15:08:22.003Z'
+    goal: Migrate daily Hermes cron jobs to project-centric scaffolds
+    stop: >-
+      attention-research scaffold files exist, mode/project dry-runs pass, cron jobs reference
+      project scaffolds
+    journal:
+      first_line: 51
+      last_line: 52
+    artifacts: artifacts/loops/loop-20260628-003
+    reason: attention-research project scaffolds verified and cron jobs updated
+  - id: loop-20260628-004
+    status: done
+    started_at: '2026-06-28T16:31:02.877Z'
+    closed_at: '2026-06-28T16:31:53.073Z'
+    goal: Migrate AR morning digest to pb -- mode
+    stop: pb-daily-monitor --mode attention-research runs cleanly
+    journal:
+      first_line: 53
+      last_line: 55
+    artifacts: artifacts/loops/loop-20260628-004
+    reason: AR morning digest migration verified end-to-end via pb -- mode
+    reset_backlog:
+      archived_to: artifacts/loops/loop-20260628-004/backlog-snapshot-pre-fresh.yaml
+      count: 16
+      ts: '2026-06-28T16:31:02.890Z'
+    mode: attention-research
+  - id: loop-20260628-005
+    status: done
+    started_at: '2026-06-28T16:54:50.504Z'
+    closed_at: '2026-06-28T16:56:09.573Z'
+    goal: Daily attention-research monitoring
+    stop: Backlog drained and errors surfaced
+    journal:
+      first_line: 56
+      last_line: 58
+    artifacts: artifacts/loops/loop-20260628-005
+    reason: Manual AR scaffold test passed after HKT date fix
+    reset_backlog:
+      archived_to: artifacts/loops/loop-20260628-005/backlog-snapshot-pre-fresh.yaml
+      count: 2
+      ts: '2026-06-28T16:54:50.510Z'
+    mode: attention-research
+  - id: loop-20260628-006
+    status: done
+    started_at: '2026-06-28T16:56:29.659Z'
+    closed_at: '2026-06-28T16:58:05.027Z'
+    goal: Daily attention-research monitoring
+    stop: Backlog drained and errors surfaced
+    journal:
+      first_line: 59
+      last_line: 60
+    artifacts: artifacts/loops/loop-20260628-006
+    reason: Manual cron-triggered AR scaffold run passed
+    reset_backlog:
+      archived_to: artifacts/loops/loop-20260628-006/backlog-snapshot-pre-fresh.yaml
+      count: 2
+      ts: '2026-06-28T16:56:29.665Z'
+    mode: attention-research
+  - id: loop-20260628-007
+    status: done
+    started_at: '2026-06-28T16:58:57.913Z'
+    closed_at: '2026-06-28T16:59:02.916Z'
+    goal: Daily attention-research monitoring
+    stop: Backlog drained and errors surfaced
+    journal:
+      first_line: 61
+      last_line: 62
+    artifacts: artifacts/loops/loop-20260628-007
+    reason: AR morning digest cron completed through pb -- mode
+    reset_backlog:
+      archived_to: artifacts/loops/loop-20260628-007/backlog-snapshot-pre-fresh.yaml
+      count: 1
+      ts: '2026-06-28T16:58:57.921Z'
+    mode: attention-research
+  - id: loop-20260629-001
+    status: done
+    started_at: '2026-06-29T00:00:55.612Z'
+    closed_at: '2026-06-29T00:01:01.955Z'
+    goal: Daily attention-research monitoring
+    stop: Backlog drained and errors surfaced
+    journal:
+      first_line: 63
+      last_line: 64
+    artifacts: artifacts/loops/loop-20260629-001
+    reason: AR morning digest cron completed through pb -- mode
+    reset_backlog:
+      archived_to: artifacts/loops/loop-20260629-001/backlog-snapshot-pre-fresh.yaml
+      count: 1
+      ts: '2026-06-29T00:00:55.623Z'
+    mode: attention-research
+  - id: loop-20260629-002
+    status: done
+    started_at: '2026-06-29T02:00:00.168Z'
+    closed_at: '2026-06-29T02:00:05.049Z'
+    goal: Daily attention-research monitoring
+    stop: Backlog drained and errors surfaced
+    journal:
+      first_line: 65
+      last_line: 66
+    artifacts: artifacts/loops/loop-20260629-002
+    reason: AR morning digest cron completed through pb -- mode
+    reset_backlog:
+      archived_to: artifacts/loops/loop-20260629-002/backlog-snapshot-pre-fresh.yaml
+      count: 1
+      ts: '2026-06-29T02:00:00.173Z'
+    mode: attention-research
+  - id: loop-20260705-001
+    status: done
+    started_at: '2026-07-05T04:14:05.829Z'
+    closed_at: '2026-07-05T04:20:45.086Z'
+    goal: >-
+      Design the Wenmei revamp features (sidecar narration, changeset review, steering, vault
+      journal) as reviewable design docs per docs/revamp-phase-improvement-plan-04Jul2026.md
+    stop: >-
+      All four design docs exist in the Wenmei repo with required sections and their acceptance
+      checks pass
+    journal:
+      first_line: 67
+      last_line: 71
+    artifacts: artifacts/loops/loop-20260705-001
+    reason: null
+  - id: loop-20260705-002
+    status: done
+    started_at: '2026-07-05T09:56:24.753Z'
+    closed_at: '2026-07-05T10:52:03.808Z'
+    goal: Fix PR#1 review findings 1-8 (correctness + cleanup)
+    stop: >-
+      All 8 findings fixed, each gated by an executable acceptance_check that is red-before-green;
+      npm test + pb validate green
+    journal:
+      first_line: 72
+      last_line: 80
+    artifacts: artifacts/loops/loop-20260705-002
+    reason: null
+  - id: loop-20260705-003
+    status: done
+    started_at: '2026-07-05T18:22:26.550Z'
+    closed_at: '2026-07-06T04:22:19.587Z'
+    goal: >-
+      L1 Pack artifact: a mode leaves the repo as a .pbpack file and comes back alive — manifest
+      (A1), pb pack build (A2), pb pack install (A3), pb mode list alias, release version-sync,
+      roundtrip proof, 2 carried hardening items
+    stop: >-
+      All 8 L1 tasks done by exit code; loop proof scripts/test-pack-roundtrip.mjs green; npm test +
+      pb validate green
+    journal:
+      first_line: 81
+      last_line: 89
+    artifacts: artifacts/loops/loop-20260705-003
+    reason: null

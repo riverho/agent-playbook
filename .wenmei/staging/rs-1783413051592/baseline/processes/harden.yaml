@@ -1,0 +1,55 @@
+# processes/harden.yaml
+# How to keep the playbook alive in an agent's attention as context grows,
+# compacts, or hands off. Runtime-agnostic core + per-runtime auto-injection.
+name: harden
+version: 1.0.0
+purpose: >-
+  Make the playbook survive context limitation. The shared failure across every
+  runtime (Claude Code, OpenClaw, Hermes, ...) is attention decay over long
+  context. This process makes the playbook re-anchor automatically.
+
+principle: >-
+  Survival is NOT keeping everything in context. It is: externalize state to disk,
+  re-anchor cheaply, and auto-re-inject the anchor. Context loss must never mean work loss.
+
+failure_modes:
+  - scroll-out: early instructions lose attention as the window fills (lost-in-the-middle).
+  - compaction: summarization drops or compresses the rules and the live state.
+  - handoff: a fresh agent or resumed session never re-reads the playbook.
+
+layers:
+  - id: durable-state
+    what: All state lives on disk (backlog, journal, memory). Rehydrate with `pb status`. (Built-in.)
+  - id: re-anchor
+    what: "`pb anchor` prints the constitution; `pb checkpoint` adds drift detection. Cheap to re-read."
+  - id: auto-inject
+    what: Wire the runtime to call `pb anchor` automatically so the agent never has to remember.
+
+canonical_steps:
+  - step: 1
+    name: Externalize (verify)
+    requirements:
+      - Confirm all work is recorded via `pb record`; nothing important lives only in chat.
+      - Confirm `pb status` alone fully re-orients a cold agent.
+  - step: 2
+    name: Re-anchor discipline
+    requirements:
+      - Call `node scripts/pb.mjs anchor` at the start of every iteration and after every few actions.
+      - Call `node scripts/pb.mjs checkpoint` on resume or when unsure — it flags drift and the next move.
+  - step: 3
+    name: Auto-inject per runtime
+    requirements:
+      - "Claude Code: agents must not write `.claude/settings.json` themselves. Pipe-test the hook commands, then hand the exact hook JSON to the human to paste in; the classifier blocks agent self-modification."
+      - "Claude Code hook shape: SessionStart and UserPromptSubmit -> `pb anchor [--brief]`; PreCompact -> `pb checkpoint --snapshot`."
+      - "Other runtimes (OpenClaw / Hermes / ...): wrap each turn (or a periodic tick) with `pb anchor --brief`; on resume run `pb checkpoint`."
+      - Keep the injected anchor tiny (use --brief) so the token cost per turn is negligible.
+  - step: 4
+    name: Verify survival
+    requirements:
+      - Force a long or compacted session; confirm the agent still re-anchors and records.
+      - "`pb checkpoint` reports on-loop with no drift, and memory/RESUME.md rehydrates after a wipe."
+
+acceptance_checks:
+  - "`pb anchor` and `pb checkpoint` print the constitution + live state without crashing (even on a malformed master)."
+  - The runtime auto-injects the anchor (hook installed by a human where required) OR the loop mandates manual re-anchor every iteration.
+  - After a simulated context loss, `pb status` + memory/RESUME.md fully rehydrate the agent.

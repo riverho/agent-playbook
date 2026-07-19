@@ -1,0 +1,33 @@
+name: daily-research-run
+version: 1.0.0
+purpose: >-
+  Run a project-owned attention-research daily scaffold for a specific window.
+
+canonical_steps:
+  - step: 1
+    name: Resolve project scaffold
+    requirements:
+      - Use `--project <project-id>` or explicit `--config <path>`.
+      - Read the project descriptor and scaffold run config.
+  - step: 2
+    name: Select window skill
+    requirements:
+      - Morning uses `attention-research-morning-run`.
+      - Afternoon uses `attention-research-afternoon-run`.
+  - step: 3
+    name: Execute research workflow
+    requirements:
+      - Discover enabled topics from the configured topics file.
+      - Read topic prompt files.
+      - Search with Tavily MCP when available.
+      - Write news files and update META.json.
+      - Send Telegram digest.
+  - step: 4
+    name: Trace and verify
+    requirements:
+      - Write generated scaffold traces under the project.
+      - Verify same-day outputs and META updates.
+
+acceptance_checks:
+  - node scripts/attention-research-daily.mjs --project attention-research --window morning --date today --dry-run
+  - node scripts/attention-research-daily.mjs --project attention-research --window afternoon --date today --dry-run

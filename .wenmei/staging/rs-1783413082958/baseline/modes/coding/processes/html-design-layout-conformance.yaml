@@ -1,0 +1,129 @@
+name: html-design-layout-conformance
+version: 1.0.0
+purpose: >-
+  Convert an approved canonical HTML prototype and component mapping into design-contract.yaml,
+  then gate production screens against deterministic HTML-to-app geometry, visual, responsive,
+  interaction, and human-judgment evidence.
+
+position:
+  after:
+    - DESIGN.md and layout tokens are approved for the intended screens.
+    - Canonical HTML is approved for required viewports and meaningful content states.
+  before:
+    - Broad implementation-oriented codebase analysis or pattern mining.
+    - Production screen implementation beyond the single mapped golden screen.
+  guides:
+    - Contract-guided analysis that maps declared regions to canonical components, examples, deprecations, and test harnesses.
+  returns_during:
+    - Verification of every production screen slice and later layout-affecting change.
+
+inputs:
+  - DESIGN.md, layout tokens, and an approved feature/region inventory; production component mapping is completed during this process.
+  - Canonical HTML entry point with local or pinned assets and stable data-design-id anchors.
+  - Approved reference revision or checksum, screen states, viewports, and responsive rules.
+  - Target browser, device-scale, font, locale, timezone, fixture, and animation requirements.
+
+outputs:
+  - id: design-contract
+    path: design-contract.yaml
+    requirement: >-
+      Use source.kind html and record entry point, reference checksum, selector namespace,
+      deterministic environment, viewport/state matrix, component mapping, geometry relationships,
+      tolerances, checks, and human-attestation requirements.
+  - id: canonical-reference
+    requirement: >-
+      Versioned HTML whose compared regions use unique stable data-design-id values and whose
+      external assets are local, pinned, or checksummed.
+  - id: golden-screen
+    requirement: >-
+      One compilable production screen mapped from the reference without copying prototype-only
+      components, deprecated patterns, or incidental DOM structure.
+  - id: verification-command
+    requirement: >-
+      One target-repository command that renders HTML reference and app in the same locked browser
+      environment, compares geometry and screenshots, exercises responsive and relevant interaction
+      states, and exits nonzero on unexplained drift.
+  - id: evidence
+    requirement: Commands, exit codes, diff artifacts, reference revision, and human attestation.
+
+canonical_steps:
+  - step: 1
+    name: Confirm the HTML handoff boundary
+    requirements:
+      - Verify DESIGN.md, canonical HTML, and required states are approved and consistent before reading implementation patterns.
+      - Distinguish deliberate design rules from prototype shortcuts, incidental wrappers, and one-off CSS.
+      - List missing states, responsive behavior, regions, or layout tokens and stop when the source contract would require invention.
+
+  - step: 2
+    name: Stabilize and identify the reference
+    requirements:
+      - Assign unique stable data-design-id values to screens and compared semantic regions.
+      - Reject selectors based on generated class names, child indexes, text content, or incidental DOM depth.
+      - Pin or localize fonts, images, stylesheets, scripts, and fixture data needed to render the approved reference.
+      - Record the HTML entry point and revision or checksum; fail when the live reference no longer matches it.
+
+  - step: 3
+    name: Write design-contract.yaml
+    requirements:
+      - Start from the bundled design-contract.template.yaml and keep source.kind html.
+      - Create the source-side contract before broad implementation-oriented codebase analysis.
+      - Record every required screen, content state, viewport, reference selector, app route, component mapping, and check.
+      - Express critical layout as relationships such as aligned edges, containment, gaps, grid tracks, max widths, overflow, and wrapping.
+      - Declare position, size, ratio, and screenshot tolerances explicitly in the contract rather than hiding them in test code.
+      - Leave unresolved production-component fields explicit rather than guessing from nearby code.
+
+  - step: 4
+    name: Analyze the codebase through the contract
+    requirements:
+      - Inspect only the canonical component library/public APIs, deprecated paths, compilable examples, design tokens, and relevant test harness needed by contract regions.
+      - Complete every region's production component/layout-wrapper mapping and record variants and invalid combinations in design-contract.yaml.
+      - Do not use legacy prevalence or the nearest screen as authority to rewrite the approved canonical HTML layout.
+      - Stop when a region requires a new primitive or explicit design decision.
+
+  - step: 5
+    name: Build one deterministic comparison harness
+    requirements:
+      - Render reference and app with the same browser build, viewport, device scale, fonts, assets, locale, timezone, and fixtures.
+      - Disable or settle animation, transitions, timestamps, randomness, network-dependent content, and unstable feature flags.
+      - Compare matching data-design-id regions with DOM geometry assertions and approved screenshot baselines.
+      - Produce overlay or diff artifacts and repair-oriented failures containing contract path, reference revision, selector, expected relationship or bounds, actual result, and tolerance.
+
+  - step: 6
+    name: Prove the contract gate
+    requirements:
+      - Implement one representative production screen using mapped real components and layout tokens.
+      - Run static/compile, geometry, screenshot, responsive, and relevant interaction checks through one command.
+      - Deliberately perturb one critical layout value and confirm the command fails before restoring it.
+      - Announce HTML LAYOUT CONTRACT READY only after the restored screen passes and the negative proof is recorded.
+
+  - step: 7
+    name: Implement production screen slices
+    requirements:
+      - Use the component mapping and golden screen; do not copy prototype markup as substitute production architecture.
+      - Implement every contracted viewport and content state, not only the desktop populated state.
+      - Add each screen to the same verification command before treating the slice as complete.
+
+  - step: 8
+    name: Close the conformance gate
+    requirements:
+      - Run geometry checks to localize shifts, screenshot diffs to catch unanticipated drift, and applicable interactions.
+      - Review the diff for canonical-reference edits, checksum changes, weakened tolerances, regenerated baselines, deleted assertions, suppressions, and bypasses.
+      - Require an approved design change before updating the canonical HTML or its revision in the contract.
+      - Record human visual attestation separately; automation cannot prove taste or product judgment.
+      - Announce HTML LAYOUT CONFORMANCE PASSED only with the command, zero exit code, diff evidence, reference revision, and attestation.
+
+failure_policy:
+  - Missing or contradictory HTML/component inputs block production implementation.
+  - Reference checksum mismatch blocks comparison until the design change is reviewed.
+  - Missing fonts/assets or environment drift is a setup failure, not an acceptable visual difference.
+  - Any unexplained geometry or screenshot difference fails the gate.
+  - Tolerances and expected images may not be changed solely to obtain green.
+
+acceptance:
+  contract_gate:
+    - design-contract.yaml identifies versioned canonical HTML with source.kind html and stable selectors.
+    - Golden screen uses mapped production components and the verification command catches a deliberate shift.
+  conformance_gate:
+    - Static, geometry, visual, responsive, and applicable interaction checks exit zero.
+    - Anti-gaming review finds no weakened proof or unapproved reference update.
+    - Human visual attestation records who, when, reference revision, and what was approved.

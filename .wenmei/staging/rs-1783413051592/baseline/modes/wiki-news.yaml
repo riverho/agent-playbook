@@ -1,0 +1,51 @@
+# ============================================================================
+#  modes/wiki-news.yaml — daily LLM Wiki news maintenance pack.
+# ----------------------------------------------------------------------------
+#  A Stage-2 mode pack: blogwatcher acquisition -> LLM Wiki ingest/synthesis ->
+#  verification. Mounted from YAML; no engine code knows this mode exists.
+# ============================================================================
+
+id: wiki-news
+description: >-
+  Daily LLM Wiki news ingestion mode: blogwatcher acquisition, RSS/article extraction,
+  DB-delta backfill, wiki synthesis/index rebuild, and architecture verification.
+
+directive: |
+  You are operating in wiki-news mode. Your job is to keep /Users/river/wiki current as a
+  compounding LLM Wiki, not a feed dump.
+
+  - blogwatcher-cli is acquisition state, not synthesis.
+  - The wiki owns raw archives, normalized article pages, entity ledgers, concept pages, timelines, and indexes.
+  - Always preserve source_name, feed_url, source_url, published, ingested, sha256, and blogwatcher_id when available.
+  - Use DB-delta backfill whenever direct feed/article fetches hit redirects, 429s, or intermittent failures.
+  - Verify with the RSS architecture check before recording done.
+  - Never store credentials in the mode pack.
+
+skills_index: modes/wiki-news/skills/index.yaml
+processes_index: modes/wiki-news/processes/index.yaml
+
+scaffold:
+  config: modes/wiki-news/config/daily-wiki-runs.yaml
+  items: runs
+  skill: daily-wiki-refresh
+  id_field: id
+  goal_template: "Refresh ${wiki_path} from ${blogwatcher_db} for ${window}"
+  check_field: check
+
+principles:
+  - id: acquisition_not_synthesis
+    kind: advice
+    text: blogwatcher-cli discovers and remembers URLs; the wiki performs synthesis and provenance.
+
+  - id: db_delta_required
+    kind: advice
+    text: Backfill from the blogwatcher SQLite queue when direct fetches fail with redirects, 429s, or intermittent source errors.
+
+  - id: no_credentials_in_pack
+    kind: advice
+    text: Never store API keys, tokens, browser profiles, or other credentials inside the mode pack.
+
+  - id: architecture_check_green
+    kind: check
+    text: The wiki-news pack and RSS wiki architecture must validate after every daily refresh.
+    check: node scripts/check-wiki-news-mode.mjs && python ~/.hermes/skills/research/llm-wiki/scripts/check-rss-wiki-architecture.py /Users/river/wiki

@@ -1,0 +1,17 @@
+# Pack-local skill index for the wiki-news pack. Registered ONLY here.
+
+skills:
+  - id: daily-wiki-refresh
+    file: modes/wiki-news/skills/daily-wiki-refresh/SKILL.md
+    process: daily-wiki-refresh
+    summary: Run the complete daily blogwatcher -> LLM Wiki refresh and verify it.
+
+  - id: wiki-news-ingest
+    file: modes/wiki-news/skills/wiki-news-ingest/SKILL.md
+    process: wiki-news-ingest
+    summary: Run or debug blogwatcher scan, RSS ingest, and DB-delta backfill.
+
+  - id: wiki-news-verify
+    file: modes/wiki-news/skills/wiki-news-verify/SKILL.md
+    process: wiki-news-verify
+    summary: Verify the LLM Wiki RSS/news architecture, frontmatter, counts, and navigation.
