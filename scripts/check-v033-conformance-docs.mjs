@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import yaml from 'js-yaml';
 
-const expectedVersion = '0.3.5';
+const expectedVersion = '0.3.6';
 const master = yaml.load(readFileSync('playbook.yaml', 'utf8'));
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
@@ -24,7 +24,7 @@ function check(name, condition) {
   }
 }
 
-check('all release version authorities are 0.3.5',
+check('all release version authorities are 0.3.6',
   master.version === expectedVersion && pkg.version === expectedVersion &&
   lock.version === expectedVersion && lock.packages?.['']?.version === expectedVersion);
 check('published package includes modes and installation documentation',

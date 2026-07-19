@@ -1,4 +1,4 @@
-# Orchestrator — always-on monitoring & flows (mode-agnostic)
+# Orchestrator — always-on monitoring & flows (mode-agnostic) 
 
 The orchestrator runs a **closed monitoring loop for any mode**, and composes modes into
 **flows**. It is designed for always-on agents and cron-style invocation. The heartbeat is

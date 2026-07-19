@@ -2004,6 +2004,12 @@ function modeAnchorLine(id, doc) {
 
 function cmdMode(args) {
   const sub = args._[0] || 'show';
+  if (sub === 'list') {
+    // `pb mode list` — first-class alias of `pb list modes` (same catalog output),
+    // so both grammars work alongside `pb mode show|skills|processes`.
+    listModes();
+    return;
+  }
   if (sub === 'show') {
     // `pb mode show` -> the active mode; `pb mode show <id>` -> that named mode's menu.
     const explicit = args._[1] ? String(args._[1]).trim() : null;
@@ -2095,7 +2101,7 @@ function cmdMode(args) {
     console.log(`Mode set: ${id} (scoped to loop ${loop.id}).`);
     return;
   }
-  console.error('Usage: pb mode <show [<id>] | set <id> | check | skills [<id>] | processes [<id>]>');
+  console.error('Usage: pb mode <list | show [<id>] | set <id> | check | skills [<id>] | processes [<id>]>');
   process.exit(1);
 }
 
@@ -2126,6 +2132,7 @@ function cmdAnchor(args) {
     console.log(loopLine);
     console.log(lessonLine);
     console.log(_modeLine);
+    console.log('A claim is not verification: "done" is only what the task\'s acceptance_checks prove by exit 0 — a subagent\'s or your own "it works" changes nothing until the checks run.');
     console.log(`Re-anchor to ${MASTER} each iteration. State is on disk (${BACKLOG}, ${JOURNAL}) — rehydrate with \`node scripts/pb.mjs status\`. ${memRule}`);
     return;
   }
@@ -2638,6 +2645,8 @@ function cmdHelp() {
     anchor [--brief]       Print the constitution to re-inject (keeps the playbook salient)
     checkpoint [--snapshot]  Heartbeat: re-anchor + detect drift; --snapshot writes memory/RESUME.md
     list [processes|skills|modes]  Print the indices ("list modes" prints the mode catalog)
+    pack build <id> [--out <dir>] | pack install <file.pbpack> [--root <dir>] [--force]
+                           Build a mode pack archive / install one into a playbook root
     update [--check] [--force] [--source <dir>] [--include-master]
                            Self-update: pull the latest engine from GitHub (update.repo) and
                            overlay engine files; preserves memory/ + artifacts/. --check dry-runs.
@@ -2667,6 +2676,16 @@ switch (cmd) {
   case 'stop': cmdStop(args); break;
   case 'validate': cmdValidate(args); break;
   case 'mode': cmdMode(args); break;
+  case 'pack': {
+    // `pb pack build|install ...` — dispatch to the standalone pack tool so the
+    // engine core stays decoupled from archive mechanics.
+    try {
+      runCommandSync(process.execPath, [resolve(ROOT, 'scripts/pb-pack.mjs'), ...rest], { cwd: ROOT, stdio: 'inherit' });
+      process.exit(0);
+    } catch (e) {
+      process.exit(typeof e.status === 'number' ? e.status : 1);
+    }
+  }
   case 'anchor': cmdAnchor(args); break;
   case 'checkpoint': cmdCheckpoint(args); break;
   case 'cycle': cmdCycle(args); break;

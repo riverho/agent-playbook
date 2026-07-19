@@ -157,3 +157,72 @@ tasks:
       - node scripts/test-review-fixes.mjs finding-6
       - node scripts/test-flow-runner.mjs
       - npm test
+  # ---- L1 "Pack artifact" (docs/pb-improvements-04072026.md §8.2, epoch/v0.3.6-pack-artifact) ----
+  - id: pack-manifest-schema
+    title: "A1: pack.yaml manifest for modes/<id>/ — id, semver version, engine_range, files list, config_schema, license, provenance; blogwatch as reference"
+    status: todo
+    priority: 1
+    acceptance_checks:
+      - node scripts/check-pack-manifest.mjs blogwatch
+      - node scripts/test-pack-manifest.mjs
+      - node scripts/pb.mjs validate
+  - id: pb-mode-list-alias
+    title: "E1b: `pb mode list` as first-class alias of `pb list modes` (matches pb mode show|skills|processes grammar)"
+    status: todo
+    priority: 2
+    acceptance_checks:
+      - sh -c "node scripts/pb.mjs mode list > /tmp/pb-a.txt && node scripts/pb.mjs list modes > /tmp/pb-b.txt && diff /tmp/pb-a.txt /tmp/pb-b.txt"
+      - npm test
+  - id: release-version-sync
+    title: "Fix processes/release.yaml to bump BOTH package.json and playbook.yaml, and add a version-sync check so drift fails red (gap found in v0.3.5 release)"
+    status: todo
+    priority: 3
+    acceptance_checks:
+      - node scripts/check-version-sync.mjs
+      - sh -c "grep -q 'playbook.yaml' processes/release.yaml"
+      - node scripts/pb.mjs validate
+  - id: pack-build
+    title: "A2: `pb pack build <id>` — dist/<id>-<version>.pbpack tarball with manifest at root + SHA-256 file; refuses out-of-dir references and absolute paths"
+    status: todo
+    priority: 4
+    depends_on: [pack-manifest-schema]
+    acceptance_checks:
+      - node scripts/test-pack-build.mjs
+      - node scripts/pb.mjs validate
+  - id: pack-install
+    title: "A3: `pb pack install <file>` — verify sha256 + engine_range, unpack into modes/, register in playbook.yaml modes map + modes/index.yaml; idempotent, semver upgrade, refuse downgrade without --force"
+    status: todo
+    priority: 5
+    depends_on: [pack-build]
+    acceptance_checks:
+      - node scripts/test-pack-install.mjs
+      - node scripts/pb.mjs validate
+  - id: pack-roundtrip-proof
+    title: "L1 loop proof: build blogwatch, install into a scratch playbook, pb validate + scaffold dry-run green there"
+    status: todo
+    priority: 6
+    depends_on: [pack-install]
+    acceptance_checks:
+      - node scripts/test-pack-roundtrip.mjs
+      - npm test
+  - id: hardening-claim-anchor
+    title: "Carried (S11 hardening): add a 'claim is not verification' line to `pb anchor --brief`"
+    status: todo
+    priority: 7
+    acceptance_checks:
+      - sh -c "node scripts/pb.mjs anchor --brief | grep -qi 'claim'"
+      - npm test
+  - id: hardening-capture-default
+    title: "Carried (S11 hardening): decide + document the out-of-scope capture default in SKILL.md"
+    status: todo
+    priority: 8
+    acceptance_checks:
+      - sh -c "grep -qi 'out-of-scope' SKILL.md"
+      - node scripts/pb.mjs validate
+  # ---- triaged findings (loop-20260705-003) ----
+  - id: fix-claim-depends-on-guard
+    title: "Finding: `pb next --claim` serves tasks whose depends_on are not done (pack-install/roundtrip were claimable while pack-build was in_progress); claim guard must skip dep-unmet tasks"
+    status: todo
+    priority: 9
+    acceptance_checks:
+      - node scripts/test-next-claim-guard.mjs

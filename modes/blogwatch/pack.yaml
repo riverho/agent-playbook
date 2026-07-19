@@ -1,0 +1,22 @@
+id: blogwatch
+version: 0.1.0
+engine_range: ">=0.3.5"
+files:
+  - config/daily-watches.yaml
+  - processes/daily-monitor.yaml
+  - processes/index.yaml
+  - processes/watch-feeds.yaml
+  - skills/daily-monitor/SKILL.md
+  - skills/index.yaml
+  - skills/watch-feeds/SKILL.md
+config_schema:
+  items_key: watches
+  fields:
+    id: {type: string, required: true}
+    source: {type: string, required: true}
+    criteria: {type: string, required: true}
+    check: {type: string, required: true}
+license: free
+provenance:
+  author: riverho
+  source: "https://github.com/riverho/agent-playbook"

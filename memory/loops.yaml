@@ -217,3 +217,19 @@ loops:
       last_line: 80
     artifacts: artifacts/loops/loop-20260705-002
     reason: null
+  - id: loop-20260705-003
+    status: done
+    started_at: '2026-07-05T18:22:26.550Z'
+    closed_at: '2026-07-06T04:22:19.587Z'
+    goal: >-
+      L1 Pack artifact: a mode leaves the repo as a .pbpack file and comes back alive — manifest
+      (A1), pb pack build (A2), pb pack install (A3), pb mode list alias, release version-sync,
+      roundtrip proof, 2 carried hardening items
+    stop: >-
+      All 8 L1 tasks done by exit code; loop proof scripts/test-pack-roundtrip.mjs green; npm test +
+      pb validate green
+    journal:
+      first_line: 81
+      last_line: 89
+    artifacts: artifacts/loops/loop-20260705-003
+    reason: null

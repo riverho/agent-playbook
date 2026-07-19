@@ -112,5 +112,77 @@
     "agent_id": "agent",
     "mode": "coding",
     "updated_at": "2026-07-05T10:49:56.205Z"
+  },
+  "pack-manifest-schema": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:24:25.037Z",
+    "claimed_by": "codex",
+    "agent_id": "codex",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:30:59.123Z"
+  },
+  "pb-mode-list-alias": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:24:25.464Z",
+    "claimed_by": "claude",
+    "agent_id": "claude",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:31:11.011Z"
+  },
+  "release-version-sync": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:24:25.860Z",
+    "claimed_by": "opencode",
+    "agent_id": "opencode",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:30:59.485Z"
+  },
+  "pack-build": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:31:41.185Z",
+    "claimed_by": "codex",
+    "agent_id": "codex",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:36:05.329Z"
+  },
+  "pack-install": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:31:41.345Z",
+    "claimed_by": "claude",
+    "agent_id": "claude",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:49:14.814Z"
+  },
+  "pack-roundtrip-proof": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:31:41.500Z",
+    "claimed_by": "opencode",
+    "agent_id": "opencode",
+    "mode": "coding",
+    "updated_at": "2026-07-06T04:20:34.482Z"
+  },
+  "hardening-claim-anchor": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:51:04.775Z",
+    "claimed_by": "claude",
+    "agent_id": "claude",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:55:27.382Z"
+  },
+  "hardening-capture-default": {
+    "status": "done",
+    "loop_id": "loop-20260705-003",
+    "claimed_at": "2026-07-05T18:51:04.901Z",
+    "claimed_by": "codex",
+    "agent_id": "codex",
+    "mode": "coding",
+    "updated_at": "2026-07-05T18:57:26.903Z"
   }
 }
