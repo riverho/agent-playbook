@@ -1,4 +1,5 @@
 docs/
+.wenmei/
 node_modules/
 dist/
 *.log
