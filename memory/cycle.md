@@ -1,28 +1,37 @@
 ---
-phase: 28
-started: "2026-07-05T18:22:50.494Z"
-goal: "L1 Pack artifact (v0.3.6): a mode leaves the repo as a file and comes back alive"
-stop: "All 8 seeded tasks done by exit code; test-pack-roundtrip.mjs green; full suite green"
+phase: 29
+started: "2026-07-19T18:33:39.234Z"
+goal: "Make one epoch safely coordinate multiple workers: transactional state, explicit task/track claims, operator-gate spill, and honest close semantics"
+stop: "All multi-loop tasks pass their executable checks; the end-to-end hosted/gate/independent-track scenario and full npm suite are green"
 ---
-# Cycle Brief — phase 28
+# Cycle Brief — phase 29
 
 > Confirm this at the START of each phase, before claiming work. The North Star does
 > not change; this cycle's goal does. Fill all five, then `node scripts/pb.mjs status`.
 
 ## 1. What is this cycle's goal?
-L1 Pack artifact (v0.3.6): a mode leaves the repo as a file and comes back alive
+Make one epoch safely coordinate multiple workers: transactional state, explicit task/track claims, operator-gate spill, and honest close semantics
 
 ## 2. What challenges do I foresee?
-- Sub-agents (codex/opencode) claim "done" in prose — gate everything on the task acceptance_checks run by the orchestrator, never on their transcripts (finding-is-hypothesis).
-- pack install mutates playbook.yaml modes: map + modes/index.yaml — the bidirectional pb validate guard must stay green after every install test; sandbox all install tests in scratch copies.
-- Tarball paths: absolute-path / out-of-dir refusal in pack build is easy to get subtly wrong; test with hostile fixtures, not just the happy path.
-- Parallel sub-agents editing scripts/pb.mjs concurrently will conflict — serialize pb.mjs-touching tasks (alias, install), parallelize only disjoint files.
+- The current claim lock protects only claim selection; concurrent terminal records still perform an
+  unlocked whole-file read/modify/write and can lose another worker's update.
+- Journal append and backlog-state update are separate writes, so crash recovery needs one durable
+  commit record rather than another best-effort lock around two authoritative files.
+- `dependencies` is the implemented field while existing tasks use `depends_on`; the migration must
+  reject or normalize ambiguity so operator-gate spill is actually enforced.
+- Track routing, manual gates, and close semantics must stay compatible with the single-agent loop and
+  with Windows; every new concurrency test must run in an isolated scratch playbook.
 
 ## 3. What were the previous challenges?
-- From loop-20260705-002 reflect: (a) lib extraction broke sandboxing tests' file manifests — when adding scripts/lib or new dirs, update test manifests; (b) validation must run AFTER injection (finding-3 lesson); (c) the full suite catches what unit checks miss — run npm test before recording done on anything touching pb.mjs.
+- Existing atomic-claim, per-agent WIP, mode-routing, and parallel-append probes pass, but they are not
+  included in `npm test` and do not exercise simultaneous completion or crash recovery.
+- The prior pack loop demonstrated that new helper files and test fixtures must be included in packaging
+  and Windows coverage, and that the full suite catches gaps missed by focused tests.
 
 ## 4. Where do I stop / hand back?
-All 8 seeded tasks done by exit code; test-pack-roundtrip.mjs green; full suite green
+All multi-loop tasks pass their executable checks; the end-to-end hosted/gate/independent-track scenario and full npm suite are green
 
 ## 5. Conflicts with my own (agent) memory?
-No conflict. Host memory says codex crashed on this machine (2026-07-05 session); smoke-tested this session — codex exec now exits 0, fix applied. Treating the live probe as truth. The plan doc lives at docs/pb-improvements-04072026.md in-repo (a copy exists in the harness skill dir; the in-repo copy is canonical per carry-on rule).
+No unresolved conflict. The earlier review described claim files as lock-free, but the current folder
+contains an O_EXCL claim lock and passing claim-race tests. This cycle follows the live code: claim
+uniqueness exists; transactional completion, track affinity, operator waiting, and honest closure do not.

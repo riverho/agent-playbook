@@ -1,4 +1,4 @@
-active: null
+active: loop-20260719-001
 loops:
   - id: loop-20260617-001
     status: done
@@ -232,4 +232,19 @@ loops:
       first_line: 81
       last_line: 89
     artifacts: artifacts/loops/loop-20260705-003
+    reason: null
+  - id: loop-20260719-001
+    status: active
+    started_at: '2026-07-19T18:33:39.223Z'
+    closed_at: null
+    goal: >-
+      Make one epoch safely coordinate multiple workers: transactional state, explicit task/track
+      claims, operator-gate spill, and honest close semantics
+    stop: >-
+      All multi-loop tasks pass their executable checks; the end-to-end
+      hosted/gate/independent-track scenario and full npm suite are green
+    journal:
+      first_line: 90
+      last_line: null
+    artifacts: artifacts/loops/loop-20260719-001
     reason: null

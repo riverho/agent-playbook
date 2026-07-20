@@ -221,8 +221,118 @@ tasks:
       - node scripts/pb.mjs validate
   # ---- triaged findings (loop-20260705-003) ----
   - id: fix-claim-depends-on-guard
-    title: "Finding: `pb next --claim` serves tasks whose depends_on are not done (pack-install/roundtrip were claimable while pack-build was in_progress); claim guard must skip dep-unmet tasks"
+    title: >-
+      Normalize the dependency contract: support canonical `dependencies`, migrate or explicitly warn on
+      legacy `depends_on`, and prove that an unmet hosted-chain dependency makes `pb next` spill to an
+      eligible independent task
     status: todo
+    skill: run-task
+    mode: coding
     priority: 9
     acceptance_checks:
-      - node scripts/test-next-claim-guard.mjs
+      - node scripts/test-dependency-selection.mjs
+
+  # ---- safe multi-worker evolution loop (loop-20260719-001) ----
+  - id: multi-loop-transactional-state
+    title: >-
+      Make pb state transitions crash-recoverable and safe under concurrent completion: serialize mutations,
+      record claim/release/terminal events in one durable commit log, and treat backlog-state.json as an
+      atomically replaced rebuildable cache rather than a second authority
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 10
+    dependencies: [fix-claim-depends-on-guard]
+    acceptance_checks:
+      - node scripts/test-transactional-state.mjs
+
+  - id: multi-loop-claim-lifecycle
+    title: >-
+      Enforce claim ownership through a claim token, add an explicit `pb release --task <id>` recovery path,
+      and prevent a non-owner or stale claimant from recording a terminal transition
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 11
+    dependencies: [multi-loop-transactional-state]
+    acceptance_checks:
+      - node scripts/test-claim-lifecycle.mjs
+
+  - id: multi-loop-track-affinity
+    title: >-
+      Add first-class task `track` routing plus `pb next --claim --track <track>` and atomic
+      `pb claim --task <id>` so workers can be pinned without overloading persona modes; define strict-track
+      selection and explicit spill behavior
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 12
+    dependencies: [multi-loop-claim-lifecycle]
+    acceptance_checks:
+      - node scripts/test-track-claiming.mjs
+
+  - id: multi-loop-operator-waiting
+    title: >-
+      Represent an expected operator gate as waiting rather than failed, make normal/auto selection skip or
+      defer the gate deterministically, drain all other eligible tracks, and resume the hosted chain when
+      executable approval evidence appears
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 13
+    dependencies: [multi-loop-track-affinity]
+    acceptance_checks:
+      - node scripts/test-operator-gate-spill.mjs
+
+  - id: multi-loop-honest-close
+    title: >-
+      Make `pb loop close --status done` refuse todo, in-progress, blocked, or waiting work in the loop scope;
+      persist a distinct stalled/waiting outcome and require an explicit non-done close or audited override
+      while an operator gate remains unresolved
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 14
+    dependencies: [multi-loop-operator-waiting]
+    acceptance_checks:
+      - node scripts/test-honest-loop-close.mjs
+
+  - id: multi-loop-concurrency-suite
+    title: >-
+      Promote multi-agent safety into the default regression suite: cover same-task claim races, different-task
+      simultaneous completion, ownership/release, crash recovery, track routing, and Windows-compatible file
+      replacement; wire the probes into `npm test`
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 15
+    dependencies: [multi-loop-honest-close]
+    acceptance_checks:
+      - node scripts/test-multi-agent-suite-wiring.mjs
+
+  - id: multi-loop-operating-contract
+    title: >-
+      Document one epoch with a sole state-mutating coordinator as compatibility mode, isolated non-claiming
+      support workers, and the hardened true-parallel mode; state precisely that gate spill drains runnable
+      work and is not full completion
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 16
+    dependencies: [multi-loop-concurrency-suite]
+    acceptance_checks:
+      - node scripts/check-multi-loop-docs.mjs
+
+  - id: multi-loop-end-to-end-proof
+    title: >-
+      Prove the completed architecture in a scratch playbook: a hosted chain pauses at an operator gate,
+      intent-site priorities 100+ and delivery priorities 105+ drain safely, approval resumes the hosted chain,
+      concurrent workers retain every terminal record, and only a fully drained epoch closes done
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 17
+    dependencies: [multi-loop-operating-contract]
+    acceptance_checks:
+      - node scripts/test-multi-loop-e2e.mjs
+      - npm test
