@@ -1,4 +1,4 @@
-active: loop-20260719-001
+active: null
 loops:
   - id: loop-20260617-001
     status: done
@@ -234,9 +234,9 @@ loops:
     artifacts: artifacts/loops/loop-20260705-003
     reason: null
   - id: loop-20260719-001
-    status: active
+    status: abandoned
     started_at: '2026-07-19T18:33:39.223Z'
-    closed_at: null
+    closed_at: '2026-07-21T17:19:04.609Z'
     goal: >-
       Make one epoch safely coordinate multiple workers: transactional state, explicit task/track
       claims, operator-gate spill, and honest close semantics
@@ -245,6 +245,30 @@ loops:
       hosted/gate/independent-track scenario and full npm suite are green
     journal:
       first_line: 90
-      last_line: null
+      last_line: 91
     artifacts: artifacts/loops/loop-20260719-001
-    reason: null
+    reason: >-
+      Superseded in fresh Orca-spine worktree: River approved a fresh-start loop to enrich
+      Agent-Playbook with Orca/Wenmei worker RunCard/checker/worktree insights.
+    allow_unreflected:
+      ts: '2026-07-21T17:19:04.611Z'
+      reason: operator override
+  - id: loop-20260721-001
+    status: done
+    started_at: '2026-07-21T17:19:04.854Z'
+    closed_at: '2026-07-21T17:27:21.906Z'
+    goal: >-
+      Fresh Orca-spine enrichment for Agent-Playbook: PB owns worker worktree protocol, portable
+      RunCards, checker gates, provider cooldown, and JSON surfaces for Wenmei integration.
+    stop: >-
+      Backlog is experiment-specific, acceptance checks pass, implementation committed in
+      feat/orca-worker-runcard-spine, source main untouched.
+    journal:
+      first_line: 92
+      last_line: 97
+    artifacts: artifacts/loops/loop-20260721-001
+    reason: All fresh Orca-spine Agent-Playbook enrichment tasks passed executable checks and npm test.
+    reset_backlog:
+      archived_to: artifacts/loops/loop-20260721-001/backlog-snapshot-pre-fresh.yaml
+      count: 30
+      ts: '2026-07-21T17:19:04.866Z'

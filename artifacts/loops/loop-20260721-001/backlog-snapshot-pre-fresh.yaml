@@ -1,0 +1,492 @@
+tasks:
+  - id: plan-20260629-001
+    title: Run morning attention research for project attention-research
+    status: done
+    skill: daily-research-run
+    mode: attention-research
+    priority: 1
+    acceptance_checks:
+      - >-
+        node scripts/attention-research-daily.mjs --project attention-research --window morning
+        --date today --dry-run
+    loop_id: loop-20260629-002
+    claimed_at: '2026-06-29T02:00:00.626Z'
+    updated_at: '2026-06-29T02:00:00.746Z'
+  - id: plan-20260705-001
+    title: >-
+      Design doc: Phase A sidecar narration — tee PTY terminal-output + sandbox-files-changed into
+      Pi RPC session; commentary UI in PiPanel; opt-in per terminal; rate-limiting/chunking and
+      ANSI/TUI noise handling
+    status: done
+    skill: run-task
+    mode: coding
+    priority: 1
+    acceptance_checks:
+      - test -f /Users/river/.openclaw/workspace/projects/wenmei/docs/design/narration-sidecar.md
+      - >-
+        grep -q '## Event flow'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/narration-sidecar.md
+      - >-
+        grep -q '## Touch points'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/narration-sidecar.md
+      - >-
+        grep -q '## Open questions'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/narration-sidecar.md
+      - >-
+        sh -c "test $(wc -w <
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/narration-sidecar.md) -ge 400"
+    loop_id: loop-20260705-001
+    claimed_at: '2026-07-05T04:16:09.857Z'
+    claimed_by: agent
+    agent_id: agent
+    updated_at: '2026-07-05T04:17:41.313Z'
+  - id: plan-20260705-002
+    title: >-
+      Design doc: Phase B changeset staging + diff review — baseline snapshot strategy under
+      .wenmei/staging, per-file approve/reject reusing trash/restore, run timeline from action log,
+      Pi risk annotations
+    status: done
+    skill: run-task
+    mode: coding
+    priority: 2
+    acceptance_checks:
+      - test -f /Users/river/.openclaw/workspace/projects/wenmei/docs/design/changeset-review.md
+      - >-
+        grep -q '## Event flow'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/changeset-review.md
+      - >-
+        grep -q '## Touch points'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/changeset-review.md
+      - >-
+        grep -q '## Open questions'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/changeset-review.md
+      - >-
+        sh -c "test $(wc -w <
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/changeset-review.md) -ge 400"
+    loop_id: loop-20260705-001
+    claimed_at: '2026-07-05T04:17:41.428Z'
+    claimed_by: agent
+    agent_id: agent
+    updated_at: '2026-07-05T04:18:43.755Z'
+  - id: plan-20260705-003
+    title: >-
+      Design doc: Phase C steering — sidecar keystroke injection into PTY with user confirmation,
+      draft-my-prompt flow, drift alerts, agent profiles (launch command + injection etiquette per
+      agent)
+    status: done
+    skill: run-task
+    mode: coding
+    priority: 3
+    acceptance_checks:
+      - >-
+        test -f
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/steering-and-agent-profiles.md
+      - >-
+        grep -q '## Event flow'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/steering-and-agent-profiles.md
+      - >-
+        grep -q '## Touch points'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/steering-and-agent-profiles.md
+      - >-
+        grep -q '## Open questions'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/steering-and-agent-profiles.md
+      - >-
+        sh -c "test $(wc -w <
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/steering-and-agent-profiles.md)
+        -ge 400"
+    loop_id: loop-20260705-001
+    claimed_at: '2026-07-05T04:18:43.872Z'
+    claimed_by: agent
+    agent_id: agent
+    updated_at: '2026-07-05T04:19:47.603Z'
+  - id: plan-20260705-004
+    title: >-
+      Design doc: Phase D vault journal + foreman — Pi-maintained .wenmei/journal, auto-briefing
+      pasted into new workhorse sessions, multi-terminal status heuristics, night-shift staged batch
+      runs (no auto-commit)
+    status: done
+    skill: run-task
+    mode: coding
+    priority: 4
+    acceptance_checks:
+      - test -f /Users/river/.openclaw/workspace/projects/wenmei/docs/design/vault-journal-memory.md
+      - >-
+        grep -q '## Event flow'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/vault-journal-memory.md
+      - >-
+        grep -q '## Touch points'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/vault-journal-memory.md
+      - >-
+        grep -q '## Open questions'
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/vault-journal-memory.md
+      - >-
+        sh -c "test $(wc -w <
+        /Users/river/.openclaw/workspace/projects/wenmei/docs/design/vault-journal-memory.md) -ge
+        400"
+    loop_id: loop-20260705-001
+    claimed_at: '2026-07-05T04:19:47.715Z'
+    claimed_by: agent
+    agent_id: agent
+    updated_at: '2026-07-05T04:20:44.856Z'
+  - id: fix-v033-version-regex
+    title: 'Finding 1: check-v033-conformance-docs README assertion tests old v0.3.3 literal, not 0.3.5'
+    status: done
+    priority: 1
+    acceptance_checks:
+      - node scripts/test-review-fixes.mjs finding-1
+      - node scripts/check-v033-conformance-docs.mjs
+    loop_id: loop-20260705-002
+    claimed_at: '2026-07-05T10:01:41.769Z'
+    claimed_by: agent
+    agent_id: agent
+    mode: coding
+    updated_at: '2026-07-05T10:03:10.838Z'
+  - id: fix-wiki-python-venv
+    title: >-
+      Finding 2: wiki-news-daily frontmatter/architecture checks call bare python, not the venv
+      python
+    status: done
+    priority: 2
+    acceptance_checks:
+      - node scripts/test-review-fixes.mjs finding-2
+      - node scripts/wiki-news-daily.mjs --dry-run
+    loop_id: loop-20260705-002
+    claimed_at: '2026-07-05T10:03:10.953Z'
+    claimed_by: agent
+    agent_id: agent
+    mode: coding
+    updated_at: '2026-07-05T10:04:44.354Z'
+  - id: fix-cmdnext-skillformode
+    title: >-
+      Finding 5: cmdNext resolves display skill with active-mode skillFor, not
+      skillForMode(candidate.mode)
+    status: done
+    priority: 3
+    acceptance_checks:
+      - node scripts/test-review-fixes.mjs finding-5
+      - npm test
+    loop_id: loop-20260705-002
+    claimed_at: '2026-07-05T10:04:44.469Z'
+    claimed_by: agent
+    agent_id: agent
+    mode: coding
+    updated_at: '2026-07-05T10:06:16.322Z'
+  - id: fix-validate-memoize
+    title: >-
+      Finding 8: runValidate re-parses the skills catalog per task; memoize skill resolution per
+      mode
+    status: done
+    priority: 4
+    acceptance_checks:
+      - node scripts/test-review-fixes.mjs finding-8
+      - node scripts/pb.mjs validate
+      - npm test
+    loop_id: loop-20260705-002
+    claimed_at: '2026-07-05T10:06:16.460Z'
+    claimed_by: agent
+    agent_id: agent
+    mode: coding
+    updated_at: '2026-07-05T10:08:31.501Z'
+  - id: fix-monitor-hardcoded-defaults
+    title: >-
+      Finding 7: pb-daily-monitor hardcodes DEFAULT_MONITOR_MODE=blogwatch + absolute
+      WORKSPACE_PROJECTS; check-attention-research-mode hardcodes an absolute path
+    status: done
+    priority: 5
+    acceptance_checks:
+      - node scripts/test-review-fixes.mjs finding-7
+      - node scripts/pb-daily-monitor.mjs --dry-run --mode blogwatch
+      - npm test
+    loop_id: loop-20260705-002
+    claimed_at: '2026-07-05T10:08:31.645Z'
+    claimed_by: agent
+    agent_id: agent
+    mode: coding
+    updated_at: '2026-07-05T10:13:09.041Z'
+  - id: fix-project-relative-config
+    title: >-
+      Finding 4: project.yaml-declared config paths resolved against playbook ROOT, not the project
+      root
+    status: done
+    priority: 6
+    acceptance_checks:
+      - node scripts/test-project-relative-config.mjs
+    loop_id: loop-20260705-002
+    claimed_at: '2026-07-05T10:13:09.179Z'
+    claimed_by: agent
+    agent_id: agent
+    mode: coding
+    updated_at: '2026-07-05T10:17:06.104Z'
+  - id: fix-scaffold-field-validation
+    title: >-
+      Finding 3: generalized loadConfig dropped the guard that goal_template fields are present;
+      empty substitutions silently queue meaningless tasks
+    status: done
+    priority: 7
+    acceptance_checks:
+      - node scripts/test-scaffold-field-validation.mjs
+    loop_id: loop-20260705-002
+    claimed_at: '2026-07-05T10:17:06.221Z'
+    claimed_by: agent
+    agent_id: agent
+    mode: coding
+    updated_at: '2026-07-05T10:19:48.109Z'
+  - id: fix-extract-loop-lib
+    title: >-
+      Finding 6: activeLoop()/pb-spawn helper triplicated across pb-flow, pb-daily-monitor, pb.mjs;
+      extract to scripts/lib
+    status: done
+    priority: 8
+    acceptance_checks:
+      - node scripts/test-review-fixes.mjs finding-6
+      - node scripts/test-flow-runner.mjs
+      - npm test
+    loop_id: loop-20260705-002
+    claimed_at: '2026-07-05T10:19:48.226Z'
+    claimed_by: agent
+    agent_id: agent
+    mode: coding
+    updated_at: '2026-07-05T10:49:56.205Z'
+  - id: pack-manifest-schema
+    title: >-
+      A1: pack.yaml manifest for modes/<id>/ — id, semver version, engine_range, files list,
+      config_schema, license, provenance; blogwatch as reference
+    status: done
+    priority: 1
+    acceptance_checks:
+      - node scripts/check-pack-manifest.mjs blogwatch
+      - node scripts/test-pack-manifest.mjs
+      - node scripts/pb.mjs validate
+    loop_id: loop-20260705-003
+    claimed_at: '2026-07-05T18:24:25.037Z'
+    claimed_by: codex
+    agent_id: codex
+    mode: coding
+    updated_at: '2026-07-05T18:30:59.123Z'
+  - id: pb-mode-list-alias
+    title: >-
+      E1b: `pb mode list` as first-class alias of `pb list modes` (matches pb mode
+      show|skills|processes grammar)
+    status: done
+    priority: 2
+    acceptance_checks:
+      - >-
+        sh -c "node scripts/pb.mjs mode list > /tmp/pb-a.txt && node scripts/pb.mjs list modes >
+        /tmp/pb-b.txt && diff /tmp/pb-a.txt /tmp/pb-b.txt"
+      - npm test
+    loop_id: loop-20260705-003
+    claimed_at: '2026-07-05T18:24:25.464Z'
+    claimed_by: claude
+    agent_id: claude
+    mode: coding
+    updated_at: '2026-07-05T18:31:11.011Z'
+  - id: release-version-sync
+    title: >-
+      Fix processes/release.yaml to bump BOTH package.json and playbook.yaml, and add a version-sync
+      check so drift fails red (gap found in v0.3.5 release)
+    status: done
+    priority: 3
+    acceptance_checks:
+      - node scripts/check-version-sync.mjs
+      - sh -c "grep -q 'playbook.yaml' processes/release.yaml"
+      - node scripts/pb.mjs validate
+    loop_id: loop-20260705-003
+    claimed_at: '2026-07-05T18:24:25.860Z'
+    claimed_by: opencode
+    agent_id: opencode
+    mode: coding
+    updated_at: '2026-07-05T18:30:59.485Z'
+  - id: pack-build
+    title: >-
+      A2: `pb pack build <id>` — dist/<id>-<version>.pbpack tarball with manifest at root + SHA-256
+      file; refuses out-of-dir references and absolute paths
+    status: done
+    priority: 4
+    depends_on:
+      - pack-manifest-schema
+    acceptance_checks:
+      - node scripts/test-pack-build.mjs
+      - node scripts/pb.mjs validate
+    loop_id: loop-20260705-003
+    claimed_at: '2026-07-05T18:31:41.185Z'
+    claimed_by: codex
+    agent_id: codex
+    mode: coding
+    updated_at: '2026-07-05T18:36:05.329Z'
+  - id: pack-install
+    title: >-
+      A3: `pb pack install <file>` — verify sha256 + engine_range, unpack into modes/, register in
+      playbook.yaml modes map + modes/index.yaml; idempotent, semver upgrade, refuse downgrade
+      without --force
+    status: done
+    priority: 5
+    depends_on:
+      - pack-build
+    acceptance_checks:
+      - node scripts/test-pack-install.mjs
+      - node scripts/pb.mjs validate
+    loop_id: loop-20260705-003
+    claimed_at: '2026-07-05T18:31:41.345Z'
+    claimed_by: claude
+    agent_id: claude
+    mode: coding
+    updated_at: '2026-07-05T18:49:14.814Z'
+  - id: pack-roundtrip-proof
+    title: >-
+      L1 loop proof: build blogwatch, install into a scratch playbook, pb validate + scaffold
+      dry-run green there
+    status: done
+    priority: 6
+    depends_on:
+      - pack-install
+    acceptance_checks:
+      - node scripts/test-pack-roundtrip.mjs
+      - npm test
+    loop_id: loop-20260705-003
+    claimed_at: '2026-07-05T18:31:41.500Z'
+    claimed_by: opencode
+    agent_id: opencode
+    mode: coding
+    updated_at: '2026-07-06T04:20:34.482Z'
+  - id: hardening-claim-anchor
+    title: 'Carried (S11 hardening): add a ''claim is not verification'' line to `pb anchor --brief`'
+    status: done
+    priority: 7
+    acceptance_checks:
+      - sh -c "node scripts/pb.mjs anchor --brief | grep -qi 'claim'"
+      - npm test
+    loop_id: loop-20260705-003
+    claimed_at: '2026-07-05T18:51:04.775Z'
+    claimed_by: claude
+    agent_id: claude
+    mode: coding
+    updated_at: '2026-07-05T18:55:27.382Z'
+  - id: hardening-capture-default
+    title: 'Carried (S11 hardening): decide + document the out-of-scope capture default in SKILL.md'
+    status: done
+    priority: 8
+    acceptance_checks:
+      - sh -c "grep -qi 'out-of-scope' SKILL.md"
+      - node scripts/pb.mjs validate
+    loop_id: loop-20260705-003
+    claimed_at: '2026-07-05T18:51:04.901Z'
+    claimed_by: codex
+    agent_id: codex
+    mode: coding
+    updated_at: '2026-07-05T18:57:26.903Z'
+  - id: fix-claim-depends-on-guard
+    title: >-
+      Normalize the dependency contract: support canonical `dependencies`, migrate or explicitly
+      warn on legacy `depends_on`, and prove that an unmet hosted-chain dependency makes `pb next`
+      spill to an eligible independent task
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 9
+    acceptance_checks:
+      - node scripts/test-dependency-selection.mjs
+  - id: multi-loop-transactional-state
+    title: >-
+      Make pb state transitions crash-recoverable and safe under concurrent completion: serialize
+      mutations, record claim/release/terminal events in one durable commit log, and treat
+      backlog-state.json as an atomically replaced rebuildable cache rather than a second authority
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 10
+    dependencies:
+      - fix-claim-depends-on-guard
+    acceptance_checks:
+      - node scripts/test-transactional-state.mjs
+  - id: multi-loop-claim-lifecycle
+    title: >-
+      Enforce claim ownership through a claim token, add an explicit `pb release --task <id>`
+      recovery path, and prevent a non-owner or stale claimant from recording a terminal transition
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 11
+    dependencies:
+      - multi-loop-transactional-state
+    acceptance_checks:
+      - node scripts/test-claim-lifecycle.mjs
+  - id: multi-loop-track-affinity
+    title: >-
+      Add first-class task `track` routing plus `pb next --claim --track <track>` and atomic `pb
+      claim --task <id>` so workers can be pinned without overloading persona modes; define
+      strict-track selection and explicit spill behavior
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 12
+    dependencies:
+      - multi-loop-claim-lifecycle
+    acceptance_checks:
+      - node scripts/test-track-claiming.mjs
+  - id: multi-loop-operator-waiting
+    title: >-
+      Represent an expected operator gate as waiting rather than failed, make normal/auto selection
+      skip or defer the gate deterministically, drain all other eligible tracks, and resume the
+      hosted chain when executable approval evidence appears
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 13
+    dependencies:
+      - multi-loop-track-affinity
+    acceptance_checks:
+      - node scripts/test-operator-gate-spill.mjs
+  - id: multi-loop-honest-close
+    title: >-
+      Make `pb loop close --status done` refuse todo, in-progress, blocked, or waiting work in the
+      loop scope; persist a distinct stalled/waiting outcome and require an explicit non-done close
+      or audited override while an operator gate remains unresolved
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 14
+    dependencies:
+      - multi-loop-operator-waiting
+    acceptance_checks:
+      - node scripts/test-honest-loop-close.mjs
+  - id: multi-loop-concurrency-suite
+    title: >-
+      Promote multi-agent safety into the default regression suite: cover same-task claim races,
+      different-task simultaneous completion, ownership/release, crash recovery, track routing, and
+      Windows-compatible file replacement; wire the probes into `npm test`
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 15
+    dependencies:
+      - multi-loop-honest-close
+    acceptance_checks:
+      - node scripts/test-multi-agent-suite-wiring.mjs
+  - id: multi-loop-operating-contract
+    title: >-
+      Document one epoch with a sole state-mutating coordinator as compatibility mode, isolated
+      non-claiming support workers, and the hardened true-parallel mode; state precisely that gate
+      spill drains runnable work and is not full completion
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 16
+    dependencies:
+      - multi-loop-concurrency-suite
+    acceptance_checks:
+      - node scripts/check-multi-loop-docs.mjs
+  - id: multi-loop-end-to-end-proof
+    title: >-
+      Prove the completed architecture in a scratch playbook: a hosted chain pauses at an operator
+      gate, intent-site priorities 100+ and delivery priorities 105+ drain safely, approval resumes
+      the hosted chain, concurrent workers retain every terminal record, and only a fully drained
+      epoch closes done
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 17
+    dependencies:
+      - multi-loop-operating-contract
+    acceptance_checks:
+      - node scripts/test-multi-loop-e2e.mjs
+      - npm test

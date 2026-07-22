@@ -212,18 +212,10 @@ function writeBacklogState(state) {
 function updateBacklogState(taskId, patch) {
   const state = readBacklogState();
   const existing = state[taskId] || {};
+  const cleanPatch = Object.fromEntries(Object.entries(patch || {}).filter(([, v]) => v !== undefined));
   state[taskId] = {
     ...existing,
-    status: patch.status ?? existing.status,
-    loop_id: patch.loop_id ?? existing.loop_id,
-    claimed_at: patch.claimed_at ?? existing.claimed_at,
-    // multi-agent: backlog-state.json is the single claim-ledger authority.
-    // claimed_by = the agent holding the lease; agent_id = same at claim time;
-    // mode = the persona pack the task is being worked under.
-    claimed_by: patch.claimed_by ?? existing.claimed_by,
-    agent_id: patch.agent_id ?? existing.agent_id,
-    mode: patch.mode ?? existing.mode,
-    updated_at: patch.updated_at ?? existing.updated_at,
+    ...cleanPatch,
   };
   writeBacklogState(state);
 }
@@ -879,10 +871,179 @@ function cmdValidate(args) {
   }
 }
 
+
+function countsByStatus(tasks) {
+  const counts = Object.fromEntries(ALLOWED_STATUSES.map((status) => [status, 0]));
+  for (const t of tasks) if (counts[t.status] !== undefined) counts[t.status]++;
+  return counts;
+}
+function statusPayload() {
+  const tasks = backlogTasks();
+  const journal = readJournal();
+  const loop = activeLoop();
+  const failures = runValidate();
+  const next = tasks.filter((t) => t.status === 'todo').sort((a, b) => prio(a) - prio(b))[0] || null;
+  return {
+    schema: 'agent-playbook.status.v1',
+    name: master?.name || 'playbook',
+    version: master?.version || null,
+    backlog: {
+      counts: countsByStatus(tasks),
+      total: tasks.length,
+      next: next ? { id: next.id, title: next.title, skill: next.skill || null, priority: prio(next) } : null,
+      in_progress: tasks.filter((t) => t.status === 'in_progress').map((t) => ({ id: t.id, title: t.title, claimed_by: taskHolder(t) })),
+    },
+    loop: loop ? { id: loop.id, status: loop.status, goal: loop.goal || null, mode: loop.mode || null } : null,
+    guardrails: { status: failures.length ? 'fail' : 'green', failures },
+    lessons: { high_open: openLessons().filter((l) => l.severity === 'high').length },
+    recent_journal: journal.slice(-5),
+  };
+}
+function printJson(obj) {
+  console.log(JSON.stringify(obj, null, 2));
+}
+function taskPayload(id) {
+  const task = backlogTasks().find((t) => t.id === id);
+  if (!task) return null;
+  return {
+    schema: 'agent-playbook.task.v1',
+    task,
+    acceptance_checks: taskChecks(task),
+    gate_quality: gateQuality(task),
+    holder: taskHolder(task),
+  };
+}
+function commandQuote(s) {
+  return String(s).replace(/'/g, "'\\''");
+}
+function safeSlug(value) {
+  return String(value || '').trim().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'worker';
+}
+function taskState(taskId) {
+  return readBacklogState()[taskId] || {};
+}
+function runCardForTask(task) {
+  const state = taskState(task.id);
+  const journal = readJournal().filter((e) => !e.__malformed && e.task === task.id);
+  return {
+    schema: 'agent-playbook.runcard.v1',
+    id: `run-${task.id}`,
+    task_id: task.id,
+    title: task.title || '',
+    status: state.status ?? task.status,
+    loop_id: state.loop_id ?? task.loop_id ?? null,
+    agent: state.claimed_by || state.agent_id || null,
+    mode: state.mode || task.mode || null,
+    worker: state.worker || null,
+    provider: state.provider || null,
+    checker: state.checker || null,
+    checks: taskChecks(task).map((command) => ({ command })),
+    journal_range: journal.length ? { first_ts: journal[0].ts || null, last_ts: journal[journal.length - 1].ts || null, count: journal.length } : null,
+    updated_at: state.updated_at || null,
+  };
+}
+function cmdRunCard(args) {
+  const sub = args._[0] || 'list';
+  if (sub === 'list') {
+    const runcards = backlogTasks().map(runCardForTask);
+    if (args.json) return printJson({ schema: 'agent-playbook.runcards.v1', runcards });
+    for (const card of runcards) console.log(`[${card.task_id}] ${card.status} ${card.title}`);
+    return;
+  }
+  if (sub === 'show') {
+    const id = args._[1];
+    const task = backlogTasks().find((t) => t.id === id);
+    if (!task) { console.error(`Task not found: ${id}`); process.exit(1); }
+    const card = runCardForTask(task);
+    if (args.json) return printJson(card);
+    console.log(`[${card.task_id}] ${card.status} ${card.title}`);
+    if (card.worker) console.log(`worker: ${card.worker.agent || ''} ${card.worker.branch || ''} ${card.worker.worktree_path || ''}`);
+    if (card.checker) console.log(`checker: ${card.checker.verdict || 'pending'}`);
+    return;
+  }
+  console.error('Usage: pb runcard list|show <task-id> [--json]');
+  process.exit(1);
+}
+function cmdTask(args) {
+  const sub = args._[0];
+  if (sub !== 'show' || !args._[1]) {
+    console.error('Usage: pb task show <task-id> [--json]');
+    process.exit(1);
+  }
+  const payload = taskPayload(args._[1]);
+  if (!payload) { console.error(`Task not found: ${args._[1]}`); process.exit(1); }
+  if (args.json) return printJson(payload);
+  console.log(`[${payload.task.id}] ${payload.task.title}`);
+  console.log(`status: ${payload.task.status}`);
+}
+function workerCreatePayload(taskId, agent, execute) {
+  const top = execSync('git rev-parse --show-toplevel', { cwd: ROOT, encoding: 'utf8' }).trim();
+  const branch = `agent/${safeSlug(taskId)}-${safeSlug(agent)}`;
+  const worktree = resolve(dirname(top), `${basename(top)}-worker-${safeSlug(taskId)}-${safeSlug(agent)}`);
+  const command = `git worktree add -b '${commandQuote(branch)}' '${commandQuote(worktree)}' HEAD`;
+  return { schema: 'agent-playbook.worker.v1', action: 'create', task_id: taskId, agent, branch, worktree, command, execute: !!execute };
+}
+function cmdWorker(args) {
+  const sub = args._[0];
+  if (sub === 'create') {
+    const taskId = args._[1];
+    if (!taskId) { console.error('Usage: pb worker create <task-id> --agent <agent> [--execute] [--json]'); process.exit(1); }
+    const task = backlogTasks().find((t) => t.id === taskId);
+    if (!task) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+    const agent = args.agent || resolveAgentId(args);
+    const payload = workerCreatePayload(taskId, agent, !!args.execute);
+    if (args.execute) {
+      runCommandSync('git', ['worktree', 'add', '-b', payload.branch, payload.worktree, 'HEAD'], { cwd: ROOT, stdio: 'inherit' });
+      updateBacklogState(taskId, { worker: { agent, branch: payload.branch, worktree_path: payload.worktree, status: 'created', created_at: nowISO() }, updated_at: nowISO() });
+    }
+    if (args.json) return printJson(payload);
+    console.log(payload.execute ? `[exec] ${payload.command}` : `[dry-run] ${payload.command}`);
+    return;
+  }
+  if (sub === 'checker') {
+    const taskId = args._[1];
+    const verdict = args.verdict;
+    if (!taskId || !['pass', 'risk', 'block'].includes(verdict)) {
+      console.error('Usage: pb worker checker <task-id> --verdict pass|risk|block [--notes "..."]');
+      process.exit(1);
+    }
+    if (!backlogTasks().some((t) => t.id === taskId)) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+    const checker = { verdict, notes: args.notes || null, recorded_at: nowISO(), agent: resolveAgentId(args) };
+    updateBacklogState(taskId, { checker, updated_at: checker.recorded_at });
+    appendJournal({ ts: checker.recorded_at, loop_id: activeLoop()?.id || 'legacy', task: taskId, agent: checker.agent, agent_id: checker.agent, action: 'checker', status: verdict, checks: 'none', result: verdict, files: [], notes: checker.notes });
+    console.log(`Checker [${taskId}] → ${verdict}`);
+    return;
+  }
+  if (sub === 'merge-ready') {
+    const taskId = args._[1];
+    const task = backlogTasks().find((t) => t.id === taskId);
+    if (!task) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+    const state = taskState(taskId);
+    const ready = state.checker?.verdict === 'pass';
+    const payload = { schema: 'agent-playbook.merge-ready.v1', task_id: taskId, ready, checker: state.checker || null, reasons: ready ? [] : ['checker verdict must be pass'] };
+    if (args.json) return printJson(payload);
+    console.log(ready ? `[${taskId}] merge-ready` : `[${taskId}] not merge-ready: ${payload.reasons.join('; ')}`);
+    return;
+  }
+  if (sub === 'provider-rate-limit') {
+    const taskId = args._[1];
+    if (!taskId || !args.provider) { console.error('Usage: pb worker provider-rate-limit <task-id> --provider <name> [--retry-after 5h]'); process.exit(1); }
+    if (!backlogTasks().some((t) => t.id === taskId)) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+    const provider = { name: args.provider, status: 'rate_limited', retry_after: args['retry-after'] || '5h', recorded_at: nowISO() };
+    updateBacklogState(taskId, { provider, updated_at: provider.recorded_at });
+    appendJournal({ ts: provider.recorded_at, loop_id: activeLoop()?.id || 'legacy', task: taskId, agent: resolveAgentId(args), agent_id: resolveAgentId(args), action: 'provider_rate_limit', status: 'blocked', checks: 'none', result: 'rate_limited', files: [], notes: `${provider.name} retry_after=${provider.retry_after}` });
+    console.log(`Provider ${provider.name} for [${taskId}] rate_limited; retry_after=${provider.retry_after}`);
+    return;
+  }
+  console.error('Usage: pb worker create|checker|merge-ready|provider-rate-limit ...');
+  process.exit(1);
+}
+
 // ============================================================================
 //  status — the "where am I" orient snapshot
 // ============================================================================
-function cmdStatus() {
+function cmdStatus(args = {}) {
+  if (args.json) return printJson(statusPayload());
   const tasks = backlogTasks();
   const journal = readJournal();
 
@@ -2607,7 +2768,12 @@ function cmdHelp() {
   Loop:   orient → select → act → verify → record → report → repeat
 
   Commands:
-    status                 Orient: master summary, backlog, recent journal, guardrail state
+    status [--json]        Orient: master summary, backlog, recent journal, guardrail state
+    task show <id> [--json] Machine-readable task details and acceptance checks
+    runcard list|show <id> [--json]
+                           Portable RunCard projection for UI/runtime integrations
+    worker create|checker|merge-ready|provider-rate-limit ...
+                           Worker worktree dry-run, checker verdict, merge gate, provider cooldown
     next [--claim] [--force]
                            Select the next task; --claim marks it in_progress. Claiming is
                            refused if there's no active loop or the cycle brief is missing/stale
@@ -2664,8 +2830,11 @@ function cmdHelp() {
 const [, , cmd, ...rest] = process.argv;
 const args = parseArgs(rest);
 switch (cmd) {
-  case 'status': cmdStatus(); break;
+  case 'status': cmdStatus(args); break;
   case 'next': cmdNext(args); break;
+  case 'task': cmdTask(args); break;
+  case 'runcard': cmdRunCard(args); break;
+  case 'worker': cmdWorker(args); break;
   case 'record': cmdRecord(args); break;
   case 'report': cmdReport(args); break;
   case 'plan': cmdPlan(args); break;
