@@ -38,7 +38,9 @@ tasks:
     mode: coding
     priority: 4
     acceptance_checks:
-      - test -f docs/wenmei-pb-integration-contract.md
+      # `test -f` alone passed while docs/ was gitignored — the doc existed on disk
+      # but shipped in no commit. Assert it is tracked, not merely present.
+      - git ls-files --error-unmatch docs/wenmei-pb-integration-contract.md
       - grep -q 'PB owns truth' docs/wenmei-pb-integration-contract.md
       - grep -q 'checker' docs/wenmei-pb-integration-contract.md
       - node scripts/pb.mjs validate
@@ -53,3 +55,21 @@ tasks:
       - grep -q 'test-orca-json-surfaces.mjs' package.json
       - grep -q 'test-orca-worker-lifecycle.mjs' package.json
       - npm test
+  - id: multi-loop-safety-carryover
+    title: >-
+      Restore the multi-worker safety debt abandoned with loop-20260719-001: serialized/crash-recoverable
+      state mutation, claim tokens and `pb release`, track affinity, operator waiting, honest close,
+      and the concurrency regression suite
+    status: todo
+    skill: run-task
+    mode: coding
+    priority: 6
+    notes: >-
+      The fresh-start reset archived 30 tasks; 9 of them were unfinished multi-worker safety work.
+      This placeholder keeps that debt visible — expand it back into the individual tasks from the
+      archive when the work is picked up. Newly relevant: `pb worker checker` and
+      `pb worker provider-rate-limit` do unlocked read-modify-write on backlog-state.json, the same
+      lost-update hazard multi-loop-transactional-state was chartered to close.
+    acceptance_checks:
+      - test -f artifacts/loops/loop-20260721-001/backlog-snapshot-pre-fresh.yaml
+      - grep -q 'multi-loop-transactional-state' artifacts/loops/loop-20260721-001/backlog-snapshot-pre-fresh.yaml

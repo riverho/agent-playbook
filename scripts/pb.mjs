@@ -942,6 +942,49 @@ function runCardForTask(task) {
     updated_at: state.updated_at || null,
   };
 }
+// The last `done` journal row for a task — the record that says whether
+// acceptance_checks actually ran, or were skipped with --skip-checks. Deliberately
+// not `blocked`: operational rows like provider_rate_limit are blocked-status notes,
+// not completion records, and must not be read as the work under review.
+function lastDoneEntry(taskId) {
+  const rows = readJournal().filter((e) => !e.__malformed && e.task === taskId && e.status === 'done');
+  return rows.length ? rows[rows.length - 1] : null;
+}
+// Merge gate. A checker verdict alone is a claim, not verification (lesson-20260705-001):
+// the task must also have reached `done` through its executable acceptance_checks,
+// and the review must be newer than the work it claims to have reviewed.
+function mergeReadyPayload(task) {
+  const state = taskState(task.id);
+  const checker = state.checker || null;
+  const done = lastDoneEntry(task.id);
+  const checks = taskChecks(task);
+  const reasons = [];
+  const warnings = [];
+
+  if (checker?.verdict !== 'pass') reasons.push(`checker verdict must be pass (got ${checker?.verdict || 'none recorded'})`);
+  if (task.status !== 'done') reasons.push(`task status must be done (got ${task.status})`);
+  if (done?.checks === 'skipped') reasons.push('acceptance checks were skipped on the done record — re-record without --skip-checks');
+  if (checker && done?.ts && checker.recorded_at < done.ts) {
+    reasons.push('checker verdict predates the latest done record — re-review the current work');
+  }
+
+  if (!checks.length) warnings.push('task has no acceptance_checks — "done" rests on operator honor');
+  else if (gateQuality(task) === '⚠hollow') warnings.push('acceptance_checks are structural only (validate) — they do not test the work itself');
+  if (state.provider?.status === 'rate_limited') warnings.push(`provider ${state.provider.name} is rate_limited (retry_after=${state.provider.retry_after})`);
+
+  return {
+    schema: 'agent-playbook.merge-ready.v1',
+    task_id: task.id,
+    ready: reasons.length === 0,
+    status: task.status,
+    checker,
+    checks_outcome: done?.checks ?? null,
+    gate_quality: gateQuality(task),
+    worker: state.worker || null,
+    reasons,
+    warnings,
+  };
+}
 function cmdRunCard(args) {
   const sub = args._[0] || 'list';
   if (sub === 'list') {
@@ -976,12 +1019,57 @@ function cmdTask(args) {
   console.log(`[${payload.task.id}] ${payload.task.title}`);
   console.log(`status: ${payload.task.status}`);
 }
+function gitToplevel() {
+  try {
+    return execSync('git rev-parse --show-toplevel', { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    console.error('Not inside a git repository — `pb worker` needs git worktrees. Run `git init` first.');
+    process.exit(1);
+  }
+}
+// Worker git calls send their chatter to stderr, never stdout: `--json` consumers
+// parse stdout, and "Preparing worktree..." in the middle of a payload is a parse error.
+function runGit(argv) {
+  // stderr inherits (git's own progress goes straight to the terminal); stdout is
+  // captured and re-emitted on stderr so our stdout stays machine-parseable.
+  try {
+    const out = execFileSync('git', argv, { cwd: ROOT, stdio: ['ignore', 'pipe', 'inherit'] });
+    if (out?.length) process.stderr.write(out.toString());
+  } catch (err) {
+    if (err?.stdout?.length) process.stderr.write(err.stdout.toString());
+    throw err;
+  }
+}
+function gitBranchExists(branch) {
+  try {
+    execFileSync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: ROOT, stdio: 'ignore' });
+    return true;
+  } catch { return false; }
+}
+function workerNames(taskId, agent) {
+  const top = gitToplevel();
+  return {
+    branch: `agent/${safeSlug(taskId)}-${safeSlug(agent)}`,
+    worktree: resolve(dirname(top), `${basename(top)}-worker-${safeSlug(taskId)}-${safeSlug(agent)}`),
+  };
+}
 function workerCreatePayload(taskId, agent, execute) {
-  const top = execSync('git rev-parse --show-toplevel', { cwd: ROOT, encoding: 'utf8' }).trim();
-  const branch = `agent/${safeSlug(taskId)}-${safeSlug(agent)}`;
-  const worktree = resolve(dirname(top), `${basename(top)}-worker-${safeSlug(taskId)}-${safeSlug(agent)}`);
+  const { branch, worktree } = workerNames(taskId, agent);
   const command = `git worktree add -b '${commandQuote(branch)}' '${commandQuote(worktree)}' HEAD`;
   return { schema: 'agent-playbook.worker.v1', action: 'create', task_id: taskId, agent, branch, worktree, command, execute: !!execute };
+}
+function workerRemovePayload(taskId, agent, worker, { execute, force, deleteBranch }) {
+  // Prefer the recorded worktree — the operator may have created it under a
+  // different agent id or before a rename. Fall back to the derived names.
+  const derived = workerNames(taskId, agent);
+  const branch = worker?.branch || derived.branch;
+  const worktree = worker?.worktree_path || derived.worktree;
+  const steps = [`git worktree remove${force ? ' --force' : ''} '${commandQuote(worktree)}'`];
+  if (deleteBranch) steps.push(`git branch -D '${commandQuote(branch)}'`);
+  return {
+    schema: 'agent-playbook.worker.v1', action: 'remove', task_id: taskId, agent,
+    branch, worktree, delete_branch: !!deleteBranch, command: steps.join(' && '), execute: !!execute,
+  };
 }
 function cmdWorker(args) {
   const sub = args._[0];
@@ -993,8 +1081,51 @@ function cmdWorker(args) {
     const agent = args.agent || resolveAgentId(args);
     const payload = workerCreatePayload(taskId, agent, !!args.execute);
     if (args.execute) {
-      runCommandSync('git', ['worktree', 'add', '-b', payload.branch, payload.worktree, 'HEAD'], { cwd: ROOT, stdio: 'inherit' });
+      // Refuse before mutating: a half-made worktree is worse than a clean error.
+      if (gitBranchExists(payload.branch)) {
+        console.error(`Branch already exists: ${payload.branch}`);
+        console.error(`A worker for [${taskId}] is already open. Reuse it, or clean up with:\n  pb worker remove ${taskId} --agent ${agent} --delete-branch --execute`);
+        process.exit(1);
+      }
+      if (existsSync(payload.worktree)) {
+        console.error(`Worktree path already exists: ${payload.worktree}`);
+        console.error(`Remove or rename it, then retry.`);
+        process.exit(1);
+      }
+      try {
+        runGit(['worktree', 'add', '-b', payload.branch, payload.worktree, 'HEAD']);
+      } catch {
+        console.error(`\nFailed to create the worker worktree for [${taskId}] (see git output above). No state was recorded.`);
+        process.exit(1);
+      }
       updateBacklogState(taskId, { worker: { agent, branch: payload.branch, worktree_path: payload.worktree, status: 'created', created_at: nowISO() }, updated_at: nowISO() });
+    }
+    if (args.json) return printJson(payload);
+    console.log(payload.execute ? `[exec] ${payload.command}` : `[dry-run] ${payload.command}`);
+    return;
+  }
+  if (sub === 'remove') {
+    const taskId = args._[1];
+    if (!taskId) { console.error('Usage: pb worker remove <task-id> [--agent <agent>] [--delete-branch] [--force] [--execute] [--json]'); process.exit(1); }
+    if (!backlogTasks().some((t) => t.id === taskId)) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+    const worker = taskState(taskId).worker || null;
+    const agent = args.agent || worker?.agent || resolveAgentId(args);
+    const payload = workerRemovePayload(taskId, agent, worker, {
+      execute: !!args.execute, force: !!args.force, deleteBranch: !!args['delete-branch'],
+    });
+    if (args.execute) {
+      try {
+        runGit(['worktree', 'remove', ...(args.force ? ['--force'] : []), payload.worktree]);
+        if (args['delete-branch']) runGit(['branch', '-D', payload.branch]);
+      } catch {
+        console.error(`\nFailed to remove the worker worktree for [${taskId}] (see git output above).`);
+        console.error('Uncommitted work in the worktree? Re-run with --force to discard it.');
+        process.exit(1);
+      }
+      updateBacklogState(taskId, {
+        worker: { ...(worker || {}), agent, branch: payload.branch, worktree_path: payload.worktree, status: 'removed', removed_at: nowISO() },
+        updated_at: nowISO(),
+      });
     }
     if (args.json) return printJson(payload);
     console.log(payload.execute ? `[exec] ${payload.command}` : `[dry-run] ${payload.command}`);
@@ -1018,11 +1149,15 @@ function cmdWorker(args) {
     const taskId = args._[1];
     const task = backlogTasks().find((t) => t.id === taskId);
     if (!task) { console.error(`Task not found: ${taskId}`); process.exit(1); }
-    const state = taskState(taskId);
-    const ready = state.checker?.verdict === 'pass';
-    const payload = { schema: 'agent-playbook.merge-ready.v1', task_id: taskId, ready, checker: state.checker || null, reasons: ready ? [] : ['checker verdict must be pass'] };
-    if (args.json) return printJson(payload);
-    console.log(ready ? `[${taskId}] merge-ready` : `[${taskId}] not merge-ready: ${payload.reasons.join('; ')}`);
+    const payload = mergeReadyPayload(task);
+    if (args.json) {
+      printJson(payload);
+    } else {
+      console.log(payload.ready ? `[${taskId}] merge-ready` : `[${taskId}] not merge-ready: ${payload.reasons.join('; ')}`);
+      for (const w of payload.warnings) console.log(`  ⚠ ${w}`);
+    }
+    // Exit code is the gate: `pb worker merge-ready <id> && git merge ...`
+    if (!payload.ready) process.exit(1);
     return;
   }
   if (sub === 'provider-rate-limit') {
@@ -1035,7 +1170,7 @@ function cmdWorker(args) {
     console.log(`Provider ${provider.name} for [${taskId}] rate_limited; retry_after=${provider.retry_after}`);
     return;
   }
-  console.error('Usage: pb worker create|checker|merge-ready|provider-rate-limit ...');
+  console.error('Usage: pb worker create|remove|checker|merge-ready|provider-rate-limit ...');
   process.exit(1);
 }
 
@@ -2772,8 +2907,9 @@ function cmdHelp() {
     task show <id> [--json] Machine-readable task details and acceptance checks
     runcard list|show <id> [--json]
                            Portable RunCard projection for UI/runtime integrations
-    worker create|checker|merge-ready|provider-rate-limit ...
-                           Worker worktree dry-run, checker verdict, merge gate, provider cooldown
+    worker create|remove|checker|merge-ready|provider-rate-limit ...
+                           Worker worktrees (dry-run; --execute to apply), checker verdict,
+                           merge gate (exit 1 when not ready), provider cooldown
     next [--claim] [--force]
                            Select the next task; --claim marks it in_progress. Claiming is
                            refused if there's no active loop or the cycle brief is missing/stale

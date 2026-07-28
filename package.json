@@ -47,7 +47,8 @@
     "scripts/",
     "processes/",
     "skills/",
-    "memory/project-memory.md"
+    "memory/project-memory.md",
+    "docs/wenmei-pb-integration-contract.md"
   ],
   "engines": {
     "node": ">=18"
