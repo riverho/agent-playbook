@@ -1,4 +1,8 @@
-docs/
+# docs/ is local scratch by default. Published contracts are opt-in — list them
+# below. Must be `docs/*`, not `docs/`: git cannot re-include a file whose parent
+# directory is excluded.
+docs/*
+!docs/wenmei-pb-integration-contract.md
 .wenmei/
 .wenmei/*
 node_modules/

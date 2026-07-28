@@ -212,18 +212,10 @@ function writeBacklogState(state) {
 function updateBacklogState(taskId, patch) {
   const state = readBacklogState();
   const existing = state[taskId] || {};
+  const cleanPatch = Object.fromEntries(Object.entries(patch || {}).filter(([, v]) => v !== undefined));
   state[taskId] = {
     ...existing,
-    status: patch.status ?? existing.status,
-    loop_id: patch.loop_id ?? existing.loop_id,
-    claimed_at: patch.claimed_at ?? existing.claimed_at,
-    // multi-agent: backlog-state.json is the single claim-ledger authority.
-    // claimed_by = the agent holding the lease; agent_id = same at claim time;
-    // mode = the persona pack the task is being worked under.
-    claimed_by: patch.claimed_by ?? existing.claimed_by,
-    agent_id: patch.agent_id ?? existing.agent_id,
-    mode: patch.mode ?? existing.mode,
-    updated_at: patch.updated_at ?? existing.updated_at,
+    ...cleanPatch,
   };
   writeBacklogState(state);
 }
@@ -879,10 +871,314 @@ function cmdValidate(args) {
   }
 }
 
+
+function countsByStatus(tasks) {
+  const counts = Object.fromEntries(ALLOWED_STATUSES.map((status) => [status, 0]));
+  for (const t of tasks) if (counts[t.status] !== undefined) counts[t.status]++;
+  return counts;
+}
+function statusPayload() {
+  const tasks = backlogTasks();
+  const journal = readJournal();
+  const loop = activeLoop();
+  const failures = runValidate();
+  const next = tasks.filter((t) => t.status === 'todo').sort((a, b) => prio(a) - prio(b))[0] || null;
+  return {
+    schema: 'agent-playbook.status.v1',
+    name: master?.name || 'playbook',
+    version: master?.version || null,
+    backlog: {
+      counts: countsByStatus(tasks),
+      total: tasks.length,
+      next: next ? { id: next.id, title: next.title, skill: next.skill || null, priority: prio(next) } : null,
+      in_progress: tasks.filter((t) => t.status === 'in_progress').map((t) => ({ id: t.id, title: t.title, claimed_by: taskHolder(t) })),
+    },
+    loop: loop ? { id: loop.id, status: loop.status, goal: loop.goal || null, mode: loop.mode || null } : null,
+    guardrails: { status: failures.length ? 'fail' : 'green', failures },
+    lessons: { high_open: openLessons().filter((l) => l.severity === 'high').length },
+    recent_journal: journal.slice(-5),
+  };
+}
+function printJson(obj) {
+  console.log(JSON.stringify(obj, null, 2));
+}
+function taskPayload(id) {
+  const task = backlogTasks().find((t) => t.id === id);
+  if (!task) return null;
+  return {
+    schema: 'agent-playbook.task.v1',
+    task,
+    acceptance_checks: taskChecks(task),
+    gate_quality: gateQuality(task),
+    holder: taskHolder(task),
+  };
+}
+function commandQuote(s) {
+  return String(s).replace(/'/g, "'\\''");
+}
+function safeSlug(value) {
+  return String(value || '').trim().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'worker';
+}
+function taskState(taskId) {
+  return readBacklogState()[taskId] || {};
+}
+function runCardForTask(task) {
+  const state = taskState(task.id);
+  const journal = readJournal().filter((e) => !e.__malformed && e.task === task.id);
+  return {
+    schema: 'agent-playbook.runcard.v1',
+    id: `run-${task.id}`,
+    task_id: task.id,
+    title: task.title || '',
+    status: state.status ?? task.status,
+    loop_id: state.loop_id ?? task.loop_id ?? null,
+    agent: state.claimed_by || state.agent_id || null,
+    mode: state.mode || task.mode || null,
+    worker: state.worker || null,
+    provider: state.provider || null,
+    checker: state.checker || null,
+    checks: taskChecks(task).map((command) => ({ command })),
+    journal_range: journal.length ? { first_ts: journal[0].ts || null, last_ts: journal[journal.length - 1].ts || null, count: journal.length } : null,
+    updated_at: state.updated_at || null,
+  };
+}
+// The last `done` journal row for a task — the record that says whether
+// acceptance_checks actually ran, or were skipped with --skip-checks. Deliberately
+// not `blocked`: operational rows like provider_rate_limit are blocked-status notes,
+// not completion records, and must not be read as the work under review.
+function lastDoneEntry(taskId) {
+  const rows = readJournal().filter((e) => !e.__malformed && e.task === taskId && e.status === 'done');
+  return rows.length ? rows[rows.length - 1] : null;
+}
+// Merge gate. A checker verdict alone is a claim, not verification (lesson-20260705-001):
+// the task must also have reached `done` through its executable acceptance_checks,
+// and the review must be newer than the work it claims to have reviewed.
+function mergeReadyPayload(task) {
+  const state = taskState(task.id);
+  const checker = state.checker || null;
+  const done = lastDoneEntry(task.id);
+  const checks = taskChecks(task);
+  const reasons = [];
+  const warnings = [];
+
+  if (checker?.verdict !== 'pass') reasons.push(`checker verdict must be pass (got ${checker?.verdict || 'none recorded'})`);
+  if (task.status !== 'done') reasons.push(`task status must be done (got ${task.status})`);
+  if (done?.checks === 'skipped') reasons.push('acceptance checks were skipped on the done record — re-record without --skip-checks');
+  if (checker && done?.ts && checker.recorded_at < done.ts) {
+    reasons.push('checker verdict predates the latest done record — re-review the current work');
+  }
+
+  if (!checks.length) warnings.push('task has no acceptance_checks — "done" rests on operator honor');
+  else if (gateQuality(task) === '⚠hollow') warnings.push('acceptance_checks are structural only (validate) — they do not test the work itself');
+  if (state.provider?.status === 'rate_limited') warnings.push(`provider ${state.provider.name} is rate_limited (retry_after=${state.provider.retry_after})`);
+
+  return {
+    schema: 'agent-playbook.merge-ready.v1',
+    task_id: task.id,
+    ready: reasons.length === 0,
+    status: task.status,
+    checker,
+    checks_outcome: done?.checks ?? null,
+    gate_quality: gateQuality(task),
+    worker: state.worker || null,
+    reasons,
+    warnings,
+  };
+}
+function cmdRunCard(args) {
+  const sub = args._[0] || 'list';
+  if (sub === 'list') {
+    const runcards = backlogTasks().map(runCardForTask);
+    if (args.json) return printJson({ schema: 'agent-playbook.runcards.v1', runcards });
+    for (const card of runcards) console.log(`[${card.task_id}] ${card.status} ${card.title}`);
+    return;
+  }
+  if (sub === 'show') {
+    const id = args._[1];
+    const task = backlogTasks().find((t) => t.id === id);
+    if (!task) { console.error(`Task not found: ${id}`); process.exit(1); }
+    const card = runCardForTask(task);
+    if (args.json) return printJson(card);
+    console.log(`[${card.task_id}] ${card.status} ${card.title}`);
+    if (card.worker) console.log(`worker: ${card.worker.agent || ''} ${card.worker.branch || ''} ${card.worker.worktree_path || ''}`);
+    if (card.checker) console.log(`checker: ${card.checker.verdict || 'pending'}`);
+    return;
+  }
+  console.error('Usage: pb runcard list|show <task-id> [--json]');
+  process.exit(1);
+}
+function cmdTask(args) {
+  const sub = args._[0];
+  if (sub !== 'show' || !args._[1]) {
+    console.error('Usage: pb task show <task-id> [--json]');
+    process.exit(1);
+  }
+  const payload = taskPayload(args._[1]);
+  if (!payload) { console.error(`Task not found: ${args._[1]}`); process.exit(1); }
+  if (args.json) return printJson(payload);
+  console.log(`[${payload.task.id}] ${payload.task.title}`);
+  console.log(`status: ${payload.task.status}`);
+}
+function gitToplevel() {
+  try {
+    return execSync('git rev-parse --show-toplevel', { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    console.error('Not inside a git repository — `pb worker` needs git worktrees. Run `git init` first.');
+    process.exit(1);
+  }
+}
+// Worker git calls send their chatter to stderr, never stdout: `--json` consumers
+// parse stdout, and "Preparing worktree..." in the middle of a payload is a parse error.
+function runGit(argv) {
+  // stderr inherits (git's own progress goes straight to the terminal); stdout is
+  // captured and re-emitted on stderr so our stdout stays machine-parseable.
+  try {
+    const out = execFileSync('git', argv, { cwd: ROOT, stdio: ['ignore', 'pipe', 'inherit'] });
+    if (out?.length) process.stderr.write(out.toString());
+  } catch (err) {
+    if (err?.stdout?.length) process.stderr.write(err.stdout.toString());
+    throw err;
+  }
+}
+function gitBranchExists(branch) {
+  try {
+    execFileSync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: ROOT, stdio: 'ignore' });
+    return true;
+  } catch { return false; }
+}
+function workerNames(taskId, agent) {
+  const top = gitToplevel();
+  return {
+    branch: `agent/${safeSlug(taskId)}-${safeSlug(agent)}`,
+    worktree: resolve(dirname(top), `${basename(top)}-worker-${safeSlug(taskId)}-${safeSlug(agent)}`),
+  };
+}
+function workerCreatePayload(taskId, agent, execute) {
+  const { branch, worktree } = workerNames(taskId, agent);
+  const command = `git worktree add -b '${commandQuote(branch)}' '${commandQuote(worktree)}' HEAD`;
+  return { schema: 'agent-playbook.worker.v1', action: 'create', task_id: taskId, agent, branch, worktree, command, execute: !!execute };
+}
+function workerRemovePayload(taskId, agent, worker, { execute, force, deleteBranch }) {
+  // Prefer the recorded worktree — the operator may have created it under a
+  // different agent id or before a rename. Fall back to the derived names.
+  const derived = workerNames(taskId, agent);
+  const branch = worker?.branch || derived.branch;
+  const worktree = worker?.worktree_path || derived.worktree;
+  const steps = [`git worktree remove${force ? ' --force' : ''} '${commandQuote(worktree)}'`];
+  if (deleteBranch) steps.push(`git branch -D '${commandQuote(branch)}'`);
+  return {
+    schema: 'agent-playbook.worker.v1', action: 'remove', task_id: taskId, agent,
+    branch, worktree, delete_branch: !!deleteBranch, command: steps.join(' && '), execute: !!execute,
+  };
+}
+function cmdWorker(args) {
+  const sub = args._[0];
+  if (sub === 'create') {
+    const taskId = args._[1];
+    if (!taskId) { console.error('Usage: pb worker create <task-id> --agent <agent> [--execute] [--json]'); process.exit(1); }
+    const task = backlogTasks().find((t) => t.id === taskId);
+    if (!task) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+    const agent = args.agent || resolveAgentId(args);
+    const payload = workerCreatePayload(taskId, agent, !!args.execute);
+    if (args.execute) {
+      // Refuse before mutating: a half-made worktree is worse than a clean error.
+      if (gitBranchExists(payload.branch)) {
+        console.error(`Branch already exists: ${payload.branch}`);
+        console.error(`A worker for [${taskId}] is already open. Reuse it, or clean up with:\n  pb worker remove ${taskId} --agent ${agent} --delete-branch --execute`);
+        process.exit(1);
+      }
+      if (existsSync(payload.worktree)) {
+        console.error(`Worktree path already exists: ${payload.worktree}`);
+        console.error(`Remove or rename it, then retry.`);
+        process.exit(1);
+      }
+      try {
+        runGit(['worktree', 'add', '-b', payload.branch, payload.worktree, 'HEAD']);
+      } catch {
+        console.error(`\nFailed to create the worker worktree for [${taskId}] (see git output above). No state was recorded.`);
+        process.exit(1);
+      }
+      updateBacklogState(taskId, { worker: { agent, branch: payload.branch, worktree_path: payload.worktree, status: 'created', created_at: nowISO() }, updated_at: nowISO() });
+    }
+    if (args.json) return printJson(payload);
+    console.log(payload.execute ? `[exec] ${payload.command}` : `[dry-run] ${payload.command}`);
+    return;
+  }
+  if (sub === 'remove') {
+    const taskId = args._[1];
+    if (!taskId) { console.error('Usage: pb worker remove <task-id> [--agent <agent>] [--delete-branch] [--force] [--execute] [--json]'); process.exit(1); }
+    if (!backlogTasks().some((t) => t.id === taskId)) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+    const worker = taskState(taskId).worker || null;
+    const agent = args.agent || worker?.agent || resolveAgentId(args);
+    const payload = workerRemovePayload(taskId, agent, worker, {
+      execute: !!args.execute, force: !!args.force, deleteBranch: !!args['delete-branch'],
+    });
+    if (args.execute) {
+      try {
+        runGit(['worktree', 'remove', ...(args.force ? ['--force'] : []), payload.worktree]);
+        if (args['delete-branch']) runGit(['branch', '-D', payload.branch]);
+      } catch {
+        console.error(`\nFailed to remove the worker worktree for [${taskId}] (see git output above).`);
+        console.error('Uncommitted work in the worktree? Re-run with --force to discard it.');
+        process.exit(1);
+      }
+      updateBacklogState(taskId, {
+        worker: { ...(worker || {}), agent, branch: payload.branch, worktree_path: payload.worktree, status: 'removed', removed_at: nowISO() },
+        updated_at: nowISO(),
+      });
+    }
+    if (args.json) return printJson(payload);
+    console.log(payload.execute ? `[exec] ${payload.command}` : `[dry-run] ${payload.command}`);
+    return;
+  }
+  if (sub === 'checker') {
+    const taskId = args._[1];
+    const verdict = args.verdict;
+    if (!taskId || !['pass', 'risk', 'block'].includes(verdict)) {
+      console.error('Usage: pb worker checker <task-id> --verdict pass|risk|block [--notes "..."]');
+      process.exit(1);
+    }
+    if (!backlogTasks().some((t) => t.id === taskId)) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+    const checker = { verdict, notes: args.notes || null, recorded_at: nowISO(), agent: resolveAgentId(args) };
+    updateBacklogState(taskId, { checker, updated_at: checker.recorded_at });
+    appendJournal({ ts: checker.recorded_at, loop_id: activeLoop()?.id || 'legacy', task: taskId, agent: checker.agent, agent_id: checker.agent, action: 'checker', status: verdict, checks: 'none', result: verdict, files: [], notes: checker.notes });
+    console.log(`Checker [${taskId}] → ${verdict}`);
+    return;
+  }
+  if (sub === 'merge-ready') {
+    const taskId = args._[1];
+    const task = backlogTasks().find((t) => t.id === taskId);
+    if (!task) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+    const payload = mergeReadyPayload(task);
+    if (args.json) {
+      printJson(payload);
+    } else {
+      console.log(payload.ready ? `[${taskId}] merge-ready` : `[${taskId}] not merge-ready: ${payload.reasons.join('; ')}`);
+      for (const w of payload.warnings) console.log(`  ⚠ ${w}`);
+    }
+    // Exit code is the gate: `pb worker merge-ready <id> && git merge ...`
+    if (!payload.ready) process.exit(1);
+    return;
+  }
+  if (sub === 'provider-rate-limit') {
+    const taskId = args._[1];
+    if (!taskId || !args.provider) { console.error('Usage: pb worker provider-rate-limit <task-id> --provider <name> [--retry-after 5h]'); process.exit(1); }
+    if (!backlogTasks().some((t) => t.id === taskId)) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+    const provider = { name: args.provider, status: 'rate_limited', retry_after: args['retry-after'] || '5h', recorded_at: nowISO() };
+    updateBacklogState(taskId, { provider, updated_at: provider.recorded_at });
+    appendJournal({ ts: provider.recorded_at, loop_id: activeLoop()?.id || 'legacy', task: taskId, agent: resolveAgentId(args), agent_id: resolveAgentId(args), action: 'provider_rate_limit', status: 'blocked', checks: 'none', result: 'rate_limited', files: [], notes: `${provider.name} retry_after=${provider.retry_after}` });
+    console.log(`Provider ${provider.name} for [${taskId}] rate_limited; retry_after=${provider.retry_after}`);
+    return;
+  }
+  console.error('Usage: pb worker create|remove|checker|merge-ready|provider-rate-limit ...');
+  process.exit(1);
+}
+
 // ============================================================================
 //  status — the "where am I" orient snapshot
 // ============================================================================
-function cmdStatus() {
+function cmdStatus(args = {}) {
+  if (args.json) return printJson(statusPayload());
   const tasks = backlogTasks();
   const journal = readJournal();
 
@@ -2607,7 +2903,13 @@ function cmdHelp() {
   Loop:   orient → select → act → verify → record → report → repeat
 
   Commands:
-    status                 Orient: master summary, backlog, recent journal, guardrail state
+    status [--json]        Orient: master summary, backlog, recent journal, guardrail state
+    task show <id> [--json] Machine-readable task details and acceptance checks
+    runcard list|show <id> [--json]
+                           Portable RunCard projection for UI/runtime integrations
+    worker create|remove|checker|merge-ready|provider-rate-limit ...
+                           Worker worktrees (dry-run; --execute to apply), checker verdict,
+                           merge gate (exit 1 when not ready), provider cooldown
     next [--claim] [--force]
                            Select the next task; --claim marks it in_progress. Claiming is
                            refused if there's no active loop or the cycle brief is missing/stale
@@ -2664,8 +2966,11 @@ function cmdHelp() {
 const [, , cmd, ...rest] = process.argv;
 const args = parseArgs(rest);
 switch (cmd) {
-  case 'status': cmdStatus(); break;
+  case 'status': cmdStatus(args); break;
   case 'next': cmdNext(args); break;
+  case 'task': cmdTask(args); break;
+  case 'runcard': cmdRunCard(args); break;
+  case 'worker': cmdWorker(args); break;
   case 'record': cmdRecord(args); break;
   case 'report': cmdReport(args); break;
   case 'plan': cmdPlan(args); break;
