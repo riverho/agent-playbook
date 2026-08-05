@@ -175,6 +175,39 @@ function appendJournal(entry) {
   ensureDir(MEMORY_DIR);
   appendFileSync(p(JOURNAL), JSON.stringify(entry) + '\n', 'utf8');
 }
+// --- tracked-state trap guard ------------------------------------------------
+// The pb runtime state (memory/, artifacts/) is vault-local truth and must
+// NOT be committed to git: a tracked journal gets reverted by merges
+// (checkout/stash), silently destroying records. This guard detects the trap.
+function trackedStateWarnings() {
+  const warnings = [];
+  let gitRoot = null;
+  try {
+    const { execSync } = require('child_process');
+    gitRoot = execSync('git rev-parse --show-toplevel 2>/dev/null', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch { return warnings; }
+  if (!gitRoot) return warnings;
+  const absJournal = resolve(p(JOURNAL));
+  if (!absJournal.startsWith(gitRoot + '/')) return warnings;
+  const rel = absJournal.slice(gitRoot.length + 1);
+  const { execSync } = require('child_process');
+  let tracked = false;
+  try {
+    tracked = execSync(`git ls-files --error-unmatch "${rel}"`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim().length > 0;
+  } catch { tracked = false; } // --error-unmatch exits 1 when the file is NOT tracked
+  if (tracked) {
+    warnings.push(`TRACKED-STATE TRAP: ${rel} is committed to git. Merges (checkout/stash) can revert it and silently erase records. Run \`git rm -r --cached ${rel.split('/')[0]}\` (or the whole playbook memory dir) to make pb state vault-local.`);
+    // journal newer than its last commit = uncommitted records at risk
+    try {
+      const lastCommit = execSync(`git log -1 --format=%ct -- "${rel}"`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+      const lastTs = Number(lastCommit) || 0;
+      const rows = readJournal();
+      const newest = rows.reduce((m, r) => r && !r.__malformed && r.ts ? Math.max(m, new Date(r.ts).getTime() / 1000) : m, 0);
+      if (newest > lastTs) warnings.push(`  → ${rows.length} journal row(s) are NEWER than the journal's last commit (${lastCommit ? new Date(lastTs * 1000).toISOString().slice(0, 19) : 'never committed'}): a merge can discard them. Commit the untracking fix or run \`pb record\` after untracking.`);
+    } catch { /* journal may not exist yet */ }
+  }
+  return warnings;
+}
 function recordAuto(loop, task, status, checksOutcome, notes) {
   const entry = {
     ts: nowISO(),
@@ -851,8 +884,16 @@ function cmdValidate(args) {
   if (hollowActionable.length) {
     console.log(`\n⚠ Hollow gate warning: ${hollowActionable.length} actionable task(s) use only structural checks (pb validate):`);
     for (const t of hollowActionable) console.log(`  ⚠hollow  [${t.id}] ${t.title || ''}`);
-    console.log('Add task-specific acceptance_checks that test the work itself. Run \`node scripts/check-hollow.mjs .\` for details.');
+    console.log('Add task-specific acceptance_checks that test the work itself. Run `node scripts/check-hollow.mjs .` for details.');
     if (args.strict) { console.error('\nFailing (--strict): hollow gates on actionable tasks.'); process.exit(1); }
+  }
+
+  // Tracked-state trap: pb runtime state committed to git gets reverted by
+  // merges, silently destroying records. Warn loudly (exit 1 with --strict).
+  const trap = trackedStateWarnings();
+  if (trap.length) {
+    console.log('\n⚠ ' + trap.join('\n  '));
+    if (args.strict) { console.error('\nFailing (--strict): pb runtime state is git-tracked.'); process.exit(1); }
   }
 
   // --mode: also run the active mode's kind:check principles. Opt-in so plain
@@ -1507,6 +1548,10 @@ function closeGateErrors(loop, args = {}) {
 
   const cyc = readCycle();
   if (!cyc.exists || !cyc.stop) errors.push(`No cycle stop condition found in ${CYCLE}.`);
+
+  // Tracked-state trap (defense in depth): closing a loop whose journal is
+  // git-tracked risks the records being reverted by the next merge.
+  for (const w of trackedStateWarnings()) errors.push(w);
   return errors;
 }
 function writeLoopReport(loop, status, notes = '') {

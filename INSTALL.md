@@ -202,6 +202,36 @@ Full judgment steps in `processes/install.yaml` / `skills/install/SKILL.md`.
   (e.g. `pb:status`, `pb:validate`), then `npm install`.
 - Append a generated-reports ignore to `.gitignore` (keep `.gitkeep`).
 
+## Git contract — runtime state is VAULT-LOCAL, never tracked (IMPORTANT)
+
+`pb` keeps its runtime state in `memory/` (backlog.yaml, backlog-state.json,
+journal.ndjson, loops.yaml, cycle.md, lessons.ndjson) and `artifacts/`
+(loop close reports, snapshots, logs). **That state is vault-local truth
+and must NOT be committed to git.**
+
+Why: a git-tracked journal gets *reverted by merges* — `git checkout` /
+`git stash` restore the working tree to the committed state, silently
+discarding records you already appended. This destroyed real evidence
+(WT18/WT22 in Wenmei, 5 Aug 2026). `pb validate` and `pb loop close`
+now warn when they detect the trap.
+
+The contract:
+
+```bash
+# after scaffolding into a repo that tracks its playbook:
+git rm -r --cached .agents-playbook/memory .agents-playbook/artifacts
+git commit -m "chore: untrack pb runtime state — vault-local, never reverted by merges"
+```
+
+- **Engine source** (scripts/, modes/, skills/, processes/, playbook.yaml,
+  SKILL.md, README.md, INSTALL.md) MAY be tracked — it syncs across
+  machines and is the versioned contract.
+- **Runtime state** (memory/, artifacts/) MUST NOT be tracked — it is
+  per-vault evidence.
+- `.gitignore` should mirror this: ignore `.agents-playbook/*` then
+  re-include the engine dirs, or simply ignore
+  `.agents-playbook/memory/` + `.agents-playbook/artifacts/`.
+
 ## Root Agent Pointer
 
 Add a short pointer in the target repo's root `AGENTS.md` / `CLAUDE.md`:
