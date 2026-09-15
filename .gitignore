@@ -32,3 +32,4 @@ attic/
 # Keep the folder, ignore the rollups. Comment this out if you want reports versioned.
 artifacts/reports/*.md
 !artifacts/reports/.gitkeep
+nul
