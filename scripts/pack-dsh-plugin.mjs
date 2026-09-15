@@ -19,6 +19,7 @@
 // ============================================================================
 
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -50,6 +51,58 @@ const EXCLUDE_PATTERNS = [
   /^modes[/\\][^/\\]+[/\\]config[/\\]/i,
 ];
 const shouldExclude = (rel) => EXCLUDE_PATTERNS.some((re) => re.test(rel));
+
+// The stamp records WHAT was bundled, not merely which version. Keying the cache on the
+// version alone was wrong in a way that actually shipped: engine files were edited without
+// bumping (the README, twice), the version still matched, the build was skipped, and the
+// tarball carried a stale copy while every check stayed green. A build has to depend on its
+// inputs. The stamp lives OUTSIDE `engine/` so it is never published.
+const STAMP = join(PLUGIN, '.bundle-stamp');
+
+/**
+ * The exact file set `build()` copies, in a stable order. Shared with the stamp, so the cache
+ * can never disagree with what was actually bundled. Sorting matters: readdir order is not
+ * guaranteed, and an unstable hash would rebuild on every run.
+ */
+function listSourceFiles() {
+  const files = [];
+  for (const f of INCLUDE_FILES) {
+    if (existsSync(join(ROOT, f)) && !shouldExclude(f)) files.push(f);
+  }
+  for (const d of INCLUDE_DIRS) {
+    const src = join(ROOT, d);
+    if (!existsSync(src)) continue;
+    const walk = (dir, prefix) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const rel = `${prefix}/${entry.name}`;
+        if (entry.isDirectory()) {
+          if (!shouldExclude(rel)) walk(join(dir, entry.name), rel);
+        } else if (!shouldExclude(rel)) files.push(rel);
+      }
+    };
+    walk(src, d);
+  }
+  // `build()` copies this one file out of memory/ separately, so it counts as an input.
+  const pm = 'memory/project-memory.md';
+  if (existsSync(join(ROOT, pm))) files.push(pm);
+  return files.sort();
+}
+
+/** Content hash over every bundled input: path + bytes, so a rename counts as a change too. */
+function sourceSignature() {
+  const hash = createHash('sha256');
+  for (const rel of listSourceFiles()) {
+    hash.update(rel);
+    hash.update('\0');
+    hash.update(readFileSync(join(ROOT, rel)));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+function readStamp() {
+  try { return readFileSync(STAMP, 'utf8').trim(); } catch { return null; }
+}
 
 function dirSize(dir) {
   let total = 0;
@@ -153,6 +206,9 @@ function build() {
     log('  ERROR: the bundle carries a real backlog — that is this repository\'s work, not engine material.');
     process.exit(1);
   }
+  // Record WHAT was bundled so the next run can tell whether anything changed. Written last,
+  // so a failed build leaves the old stamp rather than claiming success.
+  writeFileSync(STAMP, `${enginePkg.version} ${sourceSignature()}\n`, 'utf8');
   return { rebuilt: true, version: enginePkg.version, engine: ENGINE, size: dirSize(ENGINE) };
 }
 
@@ -226,13 +282,25 @@ if (args.includes('--clean')) {
 
 const repoVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
 const builtPb = join(ENGINE, 'scripts', 'pb.mjs');
-const upToDate = !args.includes('--force') && existsSync(builtPb) && engineVersionOf(builtPb) === repoVersion;
+// Currency is judged on the CONTENT that would be copied, not on the version alone: a source
+// edit without a version bump must rebuild. See the STAMP note above for why.
+const signature = sourceSignature();
+const stamp = readStamp();
+const stampMatches = stamp === `${repoVersion} ${signature}`;
+const upToDate = !args.includes('--force') && existsSync(builtPb)
+  && engineVersionOf(builtPb) === repoVersion && stampMatches;
 
 let built;
 if (upToDate) {
-  log(`bundled engine  → ${ENGINE} (already at ${repoVersion}; pass --force to rebuild)`);
+  log(`bundled engine  → ${ENGINE} (already at ${repoVersion}, sources unchanged; pass --force to rebuild)`);
   built = { rebuilt: false, version: repoVersion, engine: ENGINE };
 } else {
+  if (!args.includes('--force') && existsSync(builtPb)) {
+    const why = engineVersionOf(builtPb) !== repoVersion
+      ? `version moved to ${repoVersion}`
+      : stamp === null ? 'no bundle stamp (built before staleness was tracked)' : 'bundled sources changed';
+    log(`bundled engine  → rebuilding: ${why}`);
+  }
   built = build();
 }
 checkManifest(built.version);

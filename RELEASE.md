@@ -91,6 +91,38 @@ not that you do.
   `playbook action=init` scaffolds a workspace playbook — that is the end-to-end proof the
   bundle is intact.
 
+### Publishing is ASYNC — a missing version is not a failure
+
+npm now answers a publish with `202 Accepted` and processes it in the background. The command
+exits `0` with `info ok` while the version is **still invisible** to `npm view` and 404s if
+fetched by exact version. The log says so, in one line that is easy to miss:
+
+```
+notice Your package is being processed and may take a few minutes to become available.
+http fetch PUT 202 https://registry.npmjs.org/<pkg>
+verbose exit 0
+info ok
+```
+
+Measured on v0.6.0: roughly **3.5 minutes** from PUT to `npm view` seeing it. So before
+concluding a release failed — and burning another browser 2FA round — check the log's exit
+status first, then wait. `npm view <pkg> versions` (plural) is the reliable read while the
+`latest` dist-tag is still settling.
+
+### Upgrading a profile needs an explicit range
+
+A profile installs with a caret range, and **`^0.5.1` does not include `0.6.0`** — for `0.x`,
+caret is restricted to the same minor. So `dsh plugin --profile <p> add <pkg>` reports
+"Lockfile is up to date, resolution step is skipped" and changes nothing. Move the range
+explicitly:
+
+```bash
+dsh plugin --profile <profile> add dsh-agent-playbook@^<version>
+```
+
+pnpm may also record a `minimumReleaseAgeExclude` entry for a just-published version: that is
+its supply-chain guard noting a deliberate exception, not an error.
+
 ## What the release does NOT claim
 
 - The plugin has not been exercised inside a **live** harness session. Four layers are

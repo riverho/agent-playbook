@@ -19,6 +19,11 @@ dist/
 # the tree, free to drift from the one that is actually tested.
 dsh-plugin/engine/
 
+# The bundle's content stamp: records WHICH sources produced the current bundle so a source
+# edit without a version bump rebuilds instead of shipping stale files. Generated, and kept
+# outside engine/ so it is never published.
+dsh-plugin/.bundle-stamp
+
 # The plugin is a second npm package, so `npm install` inside it writes its own
 # lockfile. Nothing needs it versioned: the plugin declares exactly one real
 # dependency, and a committed lock would also pin the harness PEER versions, which
