@@ -136,6 +136,24 @@ npm install -g agents-playbook       # global → `pb` on PATH
 > an unrelated package by another author** — `npm install agent-playbook` succeeds and silently
 > installs the wrong thing. The DSH plugin is a separate package, `dsh-agent-playbook`.
 
+### The naming rule (and why it is not a preference)
+
+`agents-playbook` — plural — is canonical everywhere the engine controls the name. That is an
+accident of the npm registry, not a design choice, and it is recorded here so it stops being
+re-litigated: the singular npm name was already taken, so the published engine took the plural,
+and the install directory followed it.
+
+| Thing | Name | Notes |
+| --- | --- | --- |
+| npm engine | `agents-playbook` | plural; the singular is someone else's package |
+| Install directory | `.agents-playbook` | plural; what `scaffold` and `action=init` create |
+| Legacy install directory | `.agent-playbook` | singular; **still discovered**, so older projects are not orphaned |
+| Older conventions | `.playbook`, `agent-playbook` | also still discovered |
+| npm plugin | `dsh-agent-playbook` | independent package |
+| Project identity | `name:` in `playbook.yaml` | per-project, unrelated to the two above |
+
+Nothing new should be written with the singular spelling; it is supported, not recommended.
+
 Then scaffold it into any repo:
 
 ```bash
@@ -374,9 +392,9 @@ Being explicit about what is shipped and what is not:
 
 | Artifact | State |
 | --- | --- |
-| Engine (`agents-playbook`) | **published**, `0.5.0` |
-| Git tags | `v0.1.0`, `v0.3`, `v0.3.2` — no tag yet for `v0.4.0` / `v0.5.0` |
-| Harness plugin (`dsh-agent-playbook`) | **published**, `0.5.0` (`npm install dsh-agent-playbook`, or `dsh plugin --profile <p> add dsh-agent-playbook`) |
+| Engine (`agents-playbook`) | **published**, `0.5.0` — the repo is at `0.5.1`, not yet published |
+| Git tags | `v0.1.0`, `v0.3`, `v0.3.2` — nothing tagged for `v0.4.x` / `v0.5.x` |
+| Harness plugin (`dsh-agent-playbook`) | **published**, `0.5.1` — install with `dsh plugin --profile <p> add dsh-agent-playbook` (needs pnpm; plain `npm install` does **not** enable it) |
 | Live in-harness verification | pending (a boot either serves the Web UI or runs an LLM task, so it stays a human step) |
 
 ## What was deliberately cut
@@ -488,6 +506,22 @@ pb scaffold --target <repo>/.agents-playbook       # 複製入其他 repo（唔�
 > 無關套件** —— `npm install agent-playbook` 會成功，但裝錯嘢。DSH 外掛係另一個獨立套件：
 > `dsh-agent-playbook`。
 
+### 命名規則（呢個唔係偏好，係事實）
+
+凡係由引擎控制嘅名，**複數 `agents-playbook` 為準**。呢個係 npm registry 造成嘅意外，唔係設計
+選擇 —— 單數 npm 名早已被佔，所以發佈嘅引擎用複數，安裝目錄亦跟住。記錄喺呢度，免得以後再糾結。
+
+| 對象 | 名 | 備註 |
+|---|---|---|
+| npm 引擎 | `agents-playbook` | 複數；單數係別人嘅 package |
+| 安裝目錄 | `.agents-playbook` | 複數；`scaffold` 同 `action=init` 產生嘅 |
+| 舊安裝目錄 | `.agent-playbook` | 單數；**仍然會被發現**，舊 project 唔會變孤兒 |
+| 更舊慣例 | `.playbook`、`agent-playbook` | 一樣會被發現 |
+| npm 外掛 | `dsh-agent-playbook` | 獨立套件 |
+| 專案身份 | `playbook.yaml` 嘅 `name:` | 每個 project 自己嘅，同上面兩個無關 |
+
+新嘢唔應該再用單數寫法 —— 佢係**支援**，唔係**建議**。
+
 ## 迴圈
 
 **orient → select → act → verify → record → report → repeat**
@@ -592,9 +626,9 @@ check / record / worker / init / unlock / repair），將 playbook 自己嘅 ski
 
 | 產物 | 狀態 |
 | --- | --- |
-| 引擎（`agents-playbook`） | **已發佈** `0.5.0` |
-| Git tag | 只有 `v0.1.0`、`v0.3`、`v0.3.2`；`v0.4.0` / `v0.5.0` 未有 tag |
-| Harness 外掛（`dsh-agent-playbook`） | **已發佈** `0.5.0`（`npm install dsh-agent-playbook`，或 `dsh plugin --profile <p> add dsh-agent-playbook`） |
+| 引擎（`agents-playbook`） | **已發佈** `0.5.0` —— repo 已經係 `0.5.1`，但未發佈 |
+| Git tag | 只有 `v0.1.0`、`v0.3`、`v0.3.2`；`v0.4.x` / `v0.5.x` 都未有 tag |
+| Harness 外掛（`dsh-agent-playbook`） | **已發佈** `0.5.1` —— 用 `dsh plugin --profile <p> add dsh-agent-playbook` 安裝（要 pnpm；單純 `npm install` **唔會**啟用佢） |
 | 真實 harness 內驗證 | 待做（一次開機唔係開 Web UI 就係跑 LLM 任務，所以呢步留返俾人） |
 
 ## 已知陷阱

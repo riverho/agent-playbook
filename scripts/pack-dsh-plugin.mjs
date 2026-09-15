@@ -173,6 +173,16 @@ function checkManifest(builtVersion) {
   if (!pluginPkg.scripts || pluginPkg.scripts.prepack !== 'node ../scripts/pack-dsh-plugin.mjs') {
     problems.push('no `prepack` hook — publishing would ship whatever bundle happened to be on disk');
   }
+  // A package that depends on itself. Nothing in the source tree looks wrong when this
+  // happens, which is why it needs a gate rather than care: running `npm install <own-name>`
+  // from inside the package folder adds it and rewrites the manifest. That shipped once —
+  // 0.5.1 went out with `dsh-agent-playbook` in its own `dependencies` — and every
+  // consumer would have resolved the plugin against itself.
+  for (const field of ['dependencies', 'devDependencies', 'optionalDependencies']) {
+    if (Object.prototype.hasOwnProperty.call(pluginPkg[field] || {}, pluginPkg.name)) {
+      problems.push(`${field} contains ${pluginPkg.name} — the plugin depends on ITSELF. Remove it; this is what running \`npm install ${pluginPkg.name}\` inside dsh-plugin/ leaves behind`);
+    }
+  }
   if (problems.length) {
     log('\nmanifest checks FAILED:');
     for (const p of problems) log(`  ! ${p}`);

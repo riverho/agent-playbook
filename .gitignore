@@ -19,6 +19,13 @@ dist/
 # the tree, free to drift from the one that is actually tested.
 dsh-plugin/engine/
 
+# The plugin is a second npm package, so `npm install` inside it writes its own
+# lockfile. Nothing needs it versioned: the plugin declares exactly one real
+# dependency, and a committed lock would also pin the harness PEER versions, which
+# are the deployment's business, not the plugin's. Left untracked it is regenerated
+# on demand; left ignored it cannot be swept into a release by `git add -A`.
+dsh-plugin/package-lock.json
+
 # Local-only files
 2026-06-10-234302-local-command-caveatcaveat-the-messages-below.txt
 2026-06-10-235329-local-command-caveatcaveat-the-messages-below.txt
@@ -32,4 +39,8 @@ attic/
 # Keep the folder, ignore the rollups. Comment this out if you want reports versioned.
 artifacts/reports/*.md
 !artifacts/reports/.gitkeep
+
+# Probe scaffolding is generated per machine (scripts/probe-stop-gate.mjs writes a patch
+# containing an absolute module specifier). Regenerated on demand, never committed.
+artifacts/probe/
 nul

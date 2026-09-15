@@ -5,6 +5,113 @@ makes the pair identifiable. `npm run check:version` guards the engine's own
 `package.json` ↔ `playbook.yaml` agreement, and `npm run pack:plugin` refuses to build a
 tarball whose plugin version differs from the engine it carries.
 
+## 0.6.0 — the right workspace, no self-dependency, and the Stop gate
+
+Minor, not patch: alongside two defect fixes that 0.5.1 shipped, this release adds the first
+mechanism that **enforces** the loop instead of asking the agent to honour it. The fixes alone
+would have been a patch; the Stop gate changes default turn behaviour, so the pair moves the
+minor. Both defects were invisible in the source tree, which is the only reason they got out.
+
+### Fixed
+
+- **The plugin depended on ITSELF.** `dsh-plugin/package.json` listed `dsh-agent-playbook` in
+  its own `dependencies` — what running `npm install dsh-agent-playbook` from inside
+  `dsh-plugin/` leaves behind. 0.5.1 published with it. It is not fatal (npm resolves a
+  self-range to the installed copy, so there is no nested copy and the plugin loads), but every
+  consumer resolved the plugin against itself. Removed — and `pack:plugin` now **refuses** to
+  build a manifest whose `dependencies`, `devDependencies` or `optionalDependencies` names the
+  package itself, because nothing about the source tree looks wrong when this happens. Proven
+  by mutation: restoring the self-dependency fails the gate with the offending package named.
+
+- **A session could adopt an unrelated project's playbook.** Workspace resolution was
+  `agent?.session?.cwd || agent?.cwd || process.cwd()`. `session.cwd` is optional
+  session-creation metadata and is unset in a live session, so it fell through to
+  `process.cwd()` — the DSH **server's** launch directory, not the session's workspace. Every
+  session that server hosted then inherited whichever project the server happened to start in:
+  a session whose workspace was one project reported another's `status`, and `action=init`
+  scaffolded a playbook *into that other project*. The workspace now comes from
+  `ctx.workspaceRegistry` (session id → owned directory); `process.cwd()` is gone from both the
+  tool and the skill provider; and when no workspace resolves the plugin **refuses**
+  (`unknown workspace`) instead of guessing. `scripts/test-dsh-plugin-workspace.mjs` pins it,
+  built so `process.cwd()` points at a *different* playbook than the registry — reverting the
+  fix turns it red, reporting the wrong project by name.
+
+- **The legacy singular install directory is discoverable again.** Projects scaffolded before
+  the spelling settled carry `.agent-playbook`; discovery knew only `.agents-playbook`,
+  `.playbook` and `agent-playbook`, so those playbooks were invisible to the plugin. Two
+  projects in this workspace were affected and have been migrated to the plural.
+
+### Documented
+
+- The naming rule, at the point of use (`NESTED_PLAYBOOK_DIRS`) and in the README, in both
+  languages: `agents-playbook` (plural) is canonical *because the singular npm name was already
+  taken*, so the published engine took the plural and the install directory followed;
+  `.agent-playbook` (singular) is a supported legacy alias, not a second convention. Recording
+  the reason is the point — it keeps being re-litigated as if it were a preference.
+- The plugin README states which workspace the plugin uses and what it does when it cannot
+  resolve one.
+
+### Added — the Stop gate: the runtime now enforces what the loop only asked for
+
+Everything else in the plugin *asks* the agent to verify. This is the first place the harness
+**refuses**: when a turn would otherwise close while the agent still holds a claim it never
+resolved, the turn is held open and the model is told which task to resolve and how. It is the
+project's own thesis — "done is an enforced exit code" — applied one layer up, where the agent
+cannot simply decline to cooperate.
+
+It rests on `agent/turn-stopping`, which fires as a turn would otherwise close; a handler that
+calls `agent.steer()` keeps it open (the loop re-tests `inbox.nextStep.length === 0` *after* the
+dispatch, so steering — not the dispatch — is what buys another step). The contract is pinned by
+`scripts/test-dsh-stop-gate.mjs`, which drives the REAL dispatch machinery rather than a stub and
+includes a negative control; the loop behaviour was confirmed in a live headless session, where
+fire 1 steered and fire 2 arrived for the same turn with the model answering the steer text.
+
+It is deliberately **timid**, because the harness documents the opposite failure — a handler that
+blocks unconditionally force-continues *every* step. A given claim is reminded about at most
+**once**, the session caps the total, and the steer text says so. Configurable via `stopGate`
+(default `true`); `false` makes the loop advisory again.
+
+## 0.5.1 — the plugin's first published revision
+
+Patch. 0.5.0 published the plugin to npm for the first time (as `dsh-agent-playbook`, matching
+the engine's unscoped convention); 0.5.1 carries the corrections that first publication
+surfaced. No engine behaviour changed.
+
+### Fixed
+
+- **The plugin is `dsh-agent-playbook`, unscoped.** The earlier `@riverho/dsh-agent-playbook`
+  name could not be published from this account at all: the `@riverho` npm scope belongs to a
+  different npm user, and npm answers a publish you may not make with `404`, not `403`. Verified
+  by `npm org ls` — that command lists an org's MEMBERS, so `someone - owner` means that user
+  owns the scope, not that you do. `dsh-plugin/package.json` and the `name` in
+  `dsh-plugin/cordis.patch.yml` (the row the loader mounts by) move together.
+- **The plugin suites no longer hardcode the install path.** They place the package at
+  `node_modules/<pluginPkg.name>`, which is the correct layout for a scoped and an unscoped
+  name alike, so a future rename cannot silently relocate the package under test.
+- **js-yaml 4.2.0 → 4.3.2** (advisory: quadratic CPU consumption via `!!omap` resolution,
+  merge-key chains, and `maxTotalMergeKeys` on empty merge sources). In range for the existing
+  `^4.1.0` declaration, so no manifest change.
+
+### Documentation
+
+- The plugin's install instruction is now the one command it actually is:
+  `dsh plugin --profile <profile> add dsh-agent-playbook`. `dsh plugin` forwards to pnpm inside
+  the profile and then reconciles `dsh.profile.bundles`, appending any dependency whose package
+  declares `dsh.bundle.patch` — so there is no bundle list to edit by hand. The manual route is
+  kept as the alternative.
+- README marks the plugin **published** (both languages) instead of "not on npm yet", and warns
+  that the engine is `agents-playbook` (plural) while the singular `agent-playbook` on npm is an
+  unrelated package by another author.
+- `RELEASE.md` records why the plugin is deliberately unscoped, so it is not "tidied" back into
+  a scope that cannot publish.
+- `CHANGELOG.md`, `SKILL.md` and `memory/project-memory.md` follow the rename.
+
+### Known, deliberately not fixed
+
+- The bundle cache in `scripts/pack-dsh-plugin.mjs` is version-based: editing an engine file
+  without bumping the version ships a stale bundle silently. This release was rebuilt with
+  `--force` for exactly that reason.
+
 ## 0.5.0 — multi-agent leases, complete worktrees, crash recovery, DSH plugin
 
 Minor, not patch: the release adds a multi-agent coordination model and a harness

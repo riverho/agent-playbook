@@ -208,14 +208,36 @@ This file is read on every session, right after `playbook.yaml`. Keep it short a
       bundle is a fallback to execute, never a target. Discovery must skip the plugin's own tree,
       or it will "find" the vendored copy and operate on the wrong project.
     - Discovery checks the engine's own **nested** install locations first
-      (`.agents-playbook`, `.playbook`, `agent-playbook`) and only then walks ancestors. An
-      upward-only walk cannot see the layout the engine's own `scaffold` recommends.
+      (`.agents-playbook`, `.agent-playbook`, `.playbook`, `agent-playbook`) and only then walks
+      ancestors. An upward-only walk cannot see the layout the engine's own `scaffold` recommends.
+      **Naming rule:** `agents-playbook` (plural) is canonical — the singular npm name was taken, so
+      the published engine took the plural and the install directory followed. `.agent-playbook`
+      (singular) is a supported LEGACY alias, not a second convention; nothing new is written with it.
+    - **The workspace comes from the harness, never from `process.cwd()`.** Resolve it through
+      `ctx.workspaceRegistry` (session id → owned directory). `agent.session.cwd` is optional
+      session-creation metadata and is unset in a live session, so trusting it falls through to the
+      server's launch directory — which binds every session the server hosts to whichever project the
+      server started in, and `action=init` then writes into that unrelated project. When no workspace
+      resolves, the plugin REFUSES (`unknown workspace`) instead of guessing.
     - `action=init` is the one action that works with no playbook present: it scaffolds AND
       hydrates (scaffold alone leaves a tree that fails `validate` on files it should create).
     - The scaffolded playbook is **self-hosting** — it carries a full engine and can scaffold
       further playbooks without the plugin.
     - The plugin version equals the engine version, so the pair is identifiable;
       `pack:plugin` refuses a mismatch. `RELEASE.md` holds the two-track checklist.
+    - **The harness CAN enforce the gate, and this is verified, not assumed.** `agent/turn-stopping`
+      fires when a turn would otherwise close, and a handler that calls `agent.steer(message)` keeps it
+      open. The loop re-tests `inbox.nextStep.length === 0` AFTER the dispatch, so steering — not the
+      dispatch itself — is what buys another step. Contract, all verified against the real machinery:
+      dispatched **serial**, so the handler takes ONE argument (not `(payload, next)` like the
+      `agent/pre-step` waterfall); the payload is `{ turn, signal }` but `agentEvents` fuses `agent`
+      into it, and an `agent` carried in the payload cannot override the injected subject. Live proof
+      (2026-09-15, headless session): fire 1 `steer`, fire 2 same turn `observed-continuation`, and the
+      model answered the steer text — so a claim with unrun checks can be made to block a turn ending.
+      **Footgun:** the harness documents that an unconditionally blocking hook force-continues every
+      step, so a real gate MUST steer at most once per turn and cap itself per session. Pinned by
+      `scripts/test-dsh-stop-gate.mjs` (12 assertions incl. a negative control); re-prove on any
+      harness upgrade with `scripts/probe-stop-gate.mjs` + `dsh-plugin/probes/stop-gate.mjs`.
 
 13. **The plugin exposes playbook skills as harness skills, namespaced.** `skills/<id>/SKILL.md`
     becomes `playbook-<id>` in the harness catalog. The namespace is not cosmetic: a harness skill is

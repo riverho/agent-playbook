@@ -37,6 +37,10 @@ export const name = 'agent-playbook';
 // appears, and leaves the tool surface working when it never does.
 export const inject = ['tools'];
 
+// Session-wide ceiling on stop-gate steering. One nudge per claim is the intent; this is the
+// backstop that makes a runaway turn impossible even if claims churn through a session.
+const STOP_GATE_MAX_STEERS = 3;
+
 export const Config = z.object({  // Where the playbook lives. Omitted → discovered from the session workspace,
   // walking ancestors (the .agents-playbook / monorepo case).
   playbookPath: z.string().default(''),
@@ -52,6 +56,10 @@ export const Config = z.object({  // Where the playbook lives. Omitted → disco
   maxContextChars: z.number().default(4000),
   // How long a single `pb` invocation may run.
   commandTimeoutMs: z.number().default(120_000),
+  // Enforce the loop's central claim at the HARNESS level: when a turn is about to end while
+  // this agent still holds a claim with no recorded outcome, hold the turn open once and say
+  // so. Off makes the gate advisory again (the agent must remember to verify).
+  stopGate: z.boolean().default(true),
 });
 
 // Human/model-readable rendering of a tool result. Kept in the plugin (not the
@@ -78,6 +86,32 @@ export function apply(ctx, config = {}) {
     quietWhenIdle: config.quietWhenIdle ?? true,
     maxContextChars: config.maxContextChars ?? 4000,
     commandTimeoutMs: config.commandTimeoutMs ?? 120_000,
+    stopGate: config.stopGate ?? true,
+  };
+
+  // WHICH directory is this session operating on?
+  //
+  // The harness owns this fact, but not where this plugin first looked for it. The workspace
+  // registry maps a session to the directory its workspace owns, and every tool call carries
+  // an explicit `workdir`; `agent.session.cwd`, by contrast, is optional session-creation
+  // metadata in the harness types. Reading that field alone therefore falls through to
+  // `process.cwd()` — which is the DSH **server's** launch directory, not the session's
+  // workspace. Binding to it makes every session a given server hosts inherit whichever
+  // project that server happened to start in: a silent, whole-deployment mix-up (observed:
+  // a session whose workspace was one project resolved a different project's playbook).
+  //
+  // Order: the registry, then the agent's own fields, then UNKNOWN — never `process.cwd()`.
+  // Unknown is a safe answer: discovery finds nothing, the tool says so, and `init` refuses
+  // instead of scaffolding into a directory this session does not own.
+  const workspaceFor = (agent, sessionId) => {
+    try {
+      const registry = ctx.get?.('workspaceRegistry') ?? ctx.workspaceRegistry;
+      const owned = registry?.list?.().find((w) => (w.sessionIds ?? []).includes(sessionId));
+      if (owned?.path) return { path: owned.path, source: 'workspaceRegistry' };
+    } catch { /* optional service: fall through to the agent's own fields */ }
+    const fromAgent = agent?.session?.cwd || agent?.cwd;
+    if (fromAgent) return { path: fromAgent, source: 'agent' };
+    return { path: null, source: 'unknown' };
   };
 
   // Per-agent bookkeeping: the resolved root, the engine entry, and the claim token
@@ -87,21 +121,26 @@ export function apply(ctx, config = {}) {
   const stateFor = (agent) => {
     const id = resolveAgentId({ agentId: agent?.id, sessionId: agent?.session?.id });
     if (!store.has(id)) {
-      const workspace = agent?.session?.cwd || agent?.cwd || process.cwd();
+      const ws = workspaceFor(agent, agent?.session?.id);
       // pbPath (which engine) and cwd (which playbook) are separate on purpose: with
       // the engine bundled, the plugin can run against a workspace playbook that has
       // no engine of its own — and it must never target its own vendored copy.
-      const engine = resolveEngine({ workspace, explicit: cfg.playbookPath });
+      const engine = resolveEngine({ workspace: ws.path ?? undefined, explicit: cfg.playbookPath });
       store.set(id, {
         id,
         sessionId: agent?.session?.id,
-        workspace,
+        workspace: ws.path,
+        workspaceSource: ws.source,
         root: engine.cwd,
         pb: engine.pbPath,
         engineSource: engine.source,
         engineVersion: engine.engine_version,
         workspaceVersion: engine.workspace_version,
         claimTokens: new Map(),
+        // Stop-gate bookkeeping. A claim is reminded about at most ONCE, so the gate can
+        // never nag one task into a runaway turn; see the `agent/turn-stopping` handler.
+        stopGateReminded: new Set(),
+        stopGateSteers: 0,
       });
     }
     return store.get(id);
@@ -193,6 +232,15 @@ export function apply(ctx, config = {}) {
       // scaffolds one from the engine the plugin carries.
       if (action === 'init') {
         const bundled = bundledEngine();
+        // Scaffolding needs a directory this session actually owns. Guessing one here is how
+        // a playbook ends up created inside an unrelated project.
+        if (!state.workspace) {
+          return {
+            ok: false,
+            error: 'unknown workspace',
+            detail: `This session has no resolvable workspace directory (source: ${state.workspaceSource}), so there is nowhere to scaffold a playbook. Set \`playbookPath\` in the plugin config to pin a playbook, or re-run from a session that has a workspace.`,
+          };
+        }
         const target = join(state.workspace, cfg.playbookDir || '.agents-playbook');
         if (!bundled) {
           return { ok: false, error: 'no engine available', detail: 'This build has no bundled engine and the workspace has no playbook. Install the engine, or use a plugin build that bundles it.' };
@@ -214,7 +262,7 @@ export function apply(ctx, config = {}) {
         return {
           ok: false,
           error: 'no playbook found',
-          detail: 'No playbook.yaml in this workspace or its ancestors. Run `playbook action=init` to scaffold one from the engine this plugin carries.',
+          detail: `No playbook.yaml under ${state.workspace ?? 'an unknown workspace'} or its ancestors. Run \`playbook action=init\` to scaffold one from the engine this plugin carries.`,
         };
       }
       const flag = (b) => (b ? ['--force'] : []);
@@ -261,7 +309,11 @@ export function apply(ctx, config = {}) {
           if (token) args.push('--token', token);
           if (force) args.push('--force');
           const r = call(state, args);
-          if (r.ok && ['done', 'blocked'].includes(status)) state.claimTokens.delete(task);
+          if (r.ok && ['done', 'blocked'].includes(status)) {
+            state.claimTokens.delete(task);
+            // Keep the two in step: a task re-claimed later has earned its one reminder again.
+            state.stopGateReminded.delete(task);
+          }
           return { ok: r.ok, code: r.code, text: r.stdout || r.stderr };
         }
         case 'worker': {
@@ -312,8 +364,11 @@ export function apply(ctx, config = {}) {
     const provider = {
       name: 'agent-playbook',
       async list(options = {}) {
-        const workspace = options.cwd || process.cwd();
-        const engine = resolveEngine({ workspace, explicit: cfg.playbookPath });
+        // `options.cwd` is the harness's per-call workspace. Never `process.cwd()` here for
+        // the same reason as the tool: it is the server's launch directory, so listing its
+        // skills would advertise a different project's catalog. No cwd lists nothing, which
+        // is the honest answer.
+        const engine = resolveEngine({ workspace: options.cwd ?? undefined, explicit: cfg.playbookPath });
         if (!engine.cwd || !engine.pbPath) return [];
         const r = runPb(['list', 'skills', '--json'], {
           pbPath: engine.pbPath, cwd: engine.cwd, timeoutMs: cfg.commandTimeoutMs, env: {},
@@ -426,5 +481,56 @@ export function apply(ctx, config = {}) {
       ctx.logger?.warn?.('agent-playbook: could not stage context: %o', e);
     }
     return decision;
+  });
+
+  // ---------------------------------------------------------------------------
+  // The Stop gate — the loop's central claim, enforced by the runtime instead of
+  // trusted to the agent.
+  //
+  // Everything else in this plugin ASKS the agent to verify. This is the one place the
+  // harness can refuse: `agent/turn-stopping` fires when a turn would otherwise close, and a
+  // handler that calls `agent.steer()` keeps it open. Verified against the real loop and in a
+  // live session (fire 1 steers, fire 2 arrives for the SAME turn); the contract is pinned by
+  // `scripts/test-dsh-stop-gate.mjs`. So a turn no longer simply ends while this agent holds a
+  // claim it never resolved.
+  //
+  // It is deliberately TIMID, because the harness documents the opposite failure: a handler
+  // that blocks unconditionally force-continues every step forever. A given claim is therefore
+  // reminded about at most once, and the session caps the total. One extra step is a nudge; an
+  // unbounded one is a runaway.
+  // ---------------------------------------------------------------------------
+  ctx.on('agent/turn-stopping', async ({ agent }) => {
+    try {
+      if (!cfg.stopGate) return;
+      const state = stateFor(agent);
+      // Dormant outside a playbook workspace: there is no claim to enforce.
+      if (!state.root || !state.pb) return;
+      if (state.claimTokens.size === 0) return;
+      const task = [...state.claimTokens.keys()].find((id) => !state.stopGateReminded.has(id));
+      // Every held claim has already been reminded about, or the session hit its ceiling.
+      if (!task || state.stopGateSteers >= STOP_GATE_MAX_STEERS) return;
+      if (typeof agent?.steer !== 'function') return;
+
+      state.stopGateReminded.add(task);
+      state.stopGateSteers += 1;
+      agent.steer(createUserMessage({
+        content: [{
+          type: 'text',
+          text: [
+            `[agent-playbook] This turn is ending while you still hold the claim on ${task},`,
+            'with no outcome recorded for it. "Done" is an exit code, not a claim.',
+            'Resolve it with the `playbook` tool:',
+            `  - run its checks:      playbook action=check task=${task}`,
+            `  - record it finished:  playbook action=record task=${task} status=done`,
+            `  - report it stuck:     playbook action=record task=${task} status=blocked`,
+            'If you are still mid-task, just continue — this is said once per claim, not every turn.',
+          ].join('\n'),
+        }],
+        source: { kind: 'agent-playbook', form: 'instructions' },
+      }));
+    } catch (e) {
+      // A hook that throws would fail the very turn it exists to check.
+      ctx.logger?.warn?.('agent-playbook: stop gate failed: %o', e);
+    }
   });
 }

@@ -147,7 +147,15 @@ out.pendingInjectionsBeforeSkills = pendingInjections.length;
 ctx.provide('skills', { registerProvider: (p) => providers.push(p) });
 out.providersAfterSkills = providers.length;
 const tool = registered[0];
-const agent = { id: 'agent-1', session: { id: 'sess-1', cwd: process.env.PB_ROOT } };
+// steer() is how a turn-stopping handler keeps a turn open, so capturing it is the only way
+// to observe the Stop gate from outside.
+const steers = [];
+const agent = { id: 'agent-1', session: { id: 'sess-1', cwd: process.env.PB_ROOT }, steer: (m) => steers.push(m) };
+const fireStopGate = async () => {
+  const hook = ctx.__hooks && ctx.__hooks['agent/turn-stopping'];
+  if (typeof hook !== 'function') return;
+  await hook({ agent, turn: 1, signal: { aborted: false } });
+};
 const run = (args) => tool.execute(args, { agent });
 out.toolName = tool.name;
 out.hasExecute = typeof tool.execute === 'function';
@@ -159,8 +167,26 @@ out.claim = await run({ action: 'claim' });
 out.claimState = JSON.parse(
   (await import('node:fs')).readFileSync(process.env.PB_ROOT + '/memory/backlog-state.json', 'utf8'),
 )[out.claim.task] ?? null;
+
+// --- the Stop gate: an unresolved claim must hold the turn open ---------------
+out.hasStopGate = typeof (ctx.__hooks && ctx.__hooks['agent/turn-stopping']) === 'function';
+await fireStopGate();
+out.steersWhileClaimed = steers.length;
+out.steerNamesTheClaimedTask = /PT1|PT2/.test((steers[0] && steers[0].content && steers[0].content[0] && steers[0].content[0].text) || '');
+// Far more important than the first steer: firing again must NOT steer again. A gate that
+// re-blocks every time force-continues every step forever.
+await fireStopGate();
+out.steersAfterSecondFire = steers.length;
+// An agent holding no claim is not gated at all.
+const unclaimedSteers = [];
+const unclaimed = { id: 'agent-2', session: { id: 'sess-2' }, steer: (m) => unclaimedSteers.push(m) };
+if (out.hasStopGate) await ctx.__hooks['agent/turn-stopping']({ agent: unclaimed, turn: 1, signal: { aborted: false } });
+out.steersFromUnclaimedAgent = unclaimedSteers.length;
 out.check = await run({ action: 'check', task: 'PT1' });
 out.done = await run({ action: 'record', task: 'PT1', status: 'done', notes: 'via plugin' });
+// Resolving the claim must silence the gate.
+await fireStopGate();
+out.steersAfterRecord = steers.length;
 out.bogus = await run({ action: 'not-an-action' });
 out.workerNoTask = await run({ action: 'worker' });
 // Register a provider? Then exercise it the way the harness would: list, pick one,
@@ -256,6 +282,20 @@ ok('action=claim claims a task and captures the claim token',
     `claimedId=${out.claim?.task} snapshot=${JSON.stringify(snap)}`);
 }
 ok('action=check runs the task acceptance checks', out.check?.ok === true, JSON.stringify(out.check)?.slice(0, 300));
+
+// --- the Stop gate -----------------------------------------------------------
+// The harness contract is pinned by scripts/test-dsh-stop-gate.mjs; these check that THIS
+// plugin uses it correctly and, above all, timidly.
+ok('the plugin registers an agent/turn-stopping handler (the gate exists at all)',
+  out.hasStopGate === true, `hasStopGate=${out.hasStopGate}`);
+ok('a turn ending with an unresolved claim is held open (a steer is issued)',
+  out.steersWhileClaimed === 1, `steers=${out.steersWhileClaimed}`);
+ok('the steer names the claimed task, so the model knows what to resolve',
+  out.steerNamesTheClaimedTask === true);
+ok('the gate nudges ONCE per claim and never nags (a second fire does NOT steer)',
+  out.steersAfterSecondFire === 1, `steers after second fire=${out.steersAfterSecondFire}`);
+ok('an agent holding no claim is never steered',
+  out.steersFromUnclaimedAgent === 0, `steers=${out.steersFromUnclaimedAgent}`);
 ok('action=record status=done is accepted when the checks pass', out.done?.ok === true,
   JSON.stringify(out.done)?.slice(0, 400));
 {
@@ -268,6 +308,8 @@ ok('action=record status=done is accepted when the checks pass', out.done?.ok ==
   const st = readState();
   ok('the task ends done in the projection', st.PT1?.status === 'done', JSON.stringify(st.PT1));
 }
+ok('the gate goes quiet once the claim is resolved (no steer after a done record)',
+  out.steersAfterRecord === 1, `steers after record=${out.steersAfterRecord}`);
 ok('an unknown action is a clean error, not a crash',
   out.bogus?.ok === false && /unknown action/.test(out.bogus.error || ''), JSON.stringify(out.bogus));
 ok('a missing task id is a clean error', out.workerNoTask?.ok === false, JSON.stringify(out.workerNoTask));

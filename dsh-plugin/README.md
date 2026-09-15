@@ -118,23 +118,67 @@ The plugin **carries the engine**, so this is one install — no separate engine
 checkout and no version to keep in step by hand.
 
 ```bash
-# mount it into the profile that runs your sessions
 dsh plugin --profile <profile> add dsh-agent-playbook
 ```
 
-That is the whole install. `dsh plugin` forwards to pnpm inside the profile directory and
-then reconciles `dsh.profile.bundles`: a dependency whose package declares `dsh.bundle.patch`
-is appended to the layer stack automatically, so there is no list to edit by hand. (It
-needs pnpm on PATH — `corepack enable pnpm` if you do not have it.)
+That is the whole install. It installs the package AND enables it: `dsh plugin` forwards to
+pnpm inside the profile directory, then reconciles `dsh.profile.bundles` — a dependency whose
+package declares `dsh.bundle.patch` is appended to the layer stack automatically. There is no
+bundle list to edit by hand.
 
-If you would rather manage the dependency yourself, `npm install dsh-agent-playbook` and
-list it as a bundle. The package declares `dsh.bundle.patch`, so the name alone is the mount:
+Verified end to end — after that one command,
+`$DSH_HOME/profiles/<profile>/package.json` contains both
+
+```json
+"dependencies": { "dsh-agent-playbook": "^0.5.1" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "…", "dsh-agent-playbook"] } }
+```
+
+and `dsh --profile <profile> --dump-config` composes `- id: agent-playbook`.
+
+### Prerequisite: pnpm
+
+`dsh plugin` is a pnpm forwarder, so pnpm must be on PATH:
+
+```bash
+npm install -g pnpm        # or, if you have corepack: corepack enable pnpm
+```
+
+Without it the command fails with `dsh: pnpm not found on PATH` (exit 127).
+
+### What does NOT work: plain `npm install`
+
+`npm install dsh-agent-playbook` does **not** enable the plugin. It installs a package into
+whatever directory you happen to be in, and the harness only reads
+`$DSH_HOME/profiles/<name>/package.json` — so the plugin lands where nothing looks for it and
+nothing appears to happen. That is the confusing "installed but DSH wants more steps" state.
+
+If you would rather manage the dependency yourself, the manual equivalent is to install it
+into the profile directory and add it to the bundle list — the package declares
+`dsh.bundle.patch`, so the name alone is the mount:
 
 ```json
 { "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-agent-playbook"] } } }
 ```
 
-Then scaffold a playbook for the workspace you want to operate, from the agent itself:
+### Two things that look like problems but are not
+
+- **`pnpm peers check` reports five missing peers.** It inspects only the profile's own
+  `node_modules`. The harness resolves its packages through `$DSH_HOME/profiles/node_modules`
+  — a directory of junctions the launcher maintains, one level *above* the profile — so
+  `@deepseek-ai/cordis`, `dsh-agent`, `dsh-llm`, `dsh-tools` and `schemastery` all resolve at
+  runtime.
+- **pnpm edits `pnpm-workspace.yaml`.** Installing a package published minutes earlier makes
+  pnpm record a `minimumReleaseAgeExclude` entry. That is its supply-chain guard recording a
+  deliberate exception, not an error.
+
+### After installing
+
+1. **Reload the session.** The profile is composed at boot (`patchReload` is `live` for the
+   web profile and `startup` for headless), so a profile that gained a package wants a restart.
+2. **Give the workspace a playbook.** The plugin is deliberately dormant until it finds one.
+
+Then scaffold one for the workspace you want to operate, from the agent itself:
 
 ```
 playbook action=init
@@ -146,8 +190,7 @@ the bundled engine. The workspace copy then takes over, so the playbook is
 **self-hosting**: it can scaffold further playbooks, and it does not depend on the
 plugin being installed to keep working.
 
-If you already have a playbook (or want it somewhere else), skip step 2 and point the
-plugin at it:
+If you already have a playbook (or want it somewhere else), point the plugin at it instead:
 
 ```yaml
 - insert:
@@ -163,9 +206,16 @@ plugin at it:
 ```
 
 There is no engine install requirement to *load* the plugin: it looks for a playbook in
-the well-known nested locations (`.agents-playbook`, `.playbook`, `agent-playbook`) and
-then walks up from the session workspace. It stays dormant when there is none — except
-that `action=init` always works, because that is what the bundled engine is for.
+the well-known nested locations (`.agents-playbook`, `.agent-playbook`, `.playbook`,
+`agent-playbook`) and then walks up from the session workspace. The plural
+`.agents-playbook` is canonical; the singular `.agent-playbook` is a supported legacy alias
+for projects scaffolded before the spelling settled. It stays dormant when there is none —
+except that `action=init` always works, because that is what the bundled engine is for.
+
+**Which workspace it uses.** The session's own directory, resolved from the harness workspace
+registry — never the server's process cwd. When no workspace can be resolved the plugin
+refuses (`unknown workspace`) rather than guessing, because guessing is how a playbook gets
+scaffolded into an unrelated project.
 
 ### Which engine runs, and where
 
@@ -190,6 +240,23 @@ ancestor walk would "discover" it and operate on the wrong project.
 | `quietWhenIdle` | `true` | Stay silent when nothing is `todo` or `in_progress`. |
 | `maxContextChars` | `4000` | Character cap on the staged block. |
 | `commandTimeoutMs` | `120000` | Per-`pb`-invocation timeout. |
+| `stopGate` | `true` | Hold a turn open (once per claim) when it ends with an unresolved claim. |
+
+## The Stop gate
+
+Everything else in this plugin *asks* the agent to verify. The gate is the one place the
+harness **refuses**: when a turn is about to end while this agent still holds a claim it never
+resolved, the turn is held open and the model is told which task to resolve and how.
+
+It is built on `agent/turn-stopping`, which fires as a turn would otherwise close; a handler
+that calls `agent.steer()` keeps it open. That contract is pinned by
+`scripts/test-dsh-stop-gate.mjs` and was confirmed in a live session — the handler steered at
+fire 1 and the loop fired again for the same turn.
+
+**It is deliberately timid**, because the harness documents the opposite failure: a handler
+that blocks unconditionally force-continues *every* step. So a given claim is reminded about
+**at most once**, the session caps its total, and the message says so. One extra step is a
+nudge; an unbounded one is a runaway. Set `stopGate: false` to make the loop advisory again.
 
 ## The `playbook` tool
 

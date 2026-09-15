@@ -104,8 +104,20 @@ export function readMasterVersion(root) {
   return null;
 }
 
-/** Well-known nested install locations, in priority order. */
-export const NESTED_PLAYBOOK_DIRS = ['.agents-playbook', '.playbook', 'agent-playbook'];
+/**
+ * Well-known nested install locations, in priority order.
+ *
+ * NAMING RULE — `.agents-playbook` (plural) is canonical; `.agent-playbook` (singular) is a
+ * supported legacy alias. The split is not a preference, it is an accident worth recording so
+ * nobody re-litigates it: the npm name `agent-playbook` (singular) was already taken by an
+ * unrelated package, so the published engine is `agents-playbook` (plural) — and the install
+ * directory followed the package name. Some projects were scaffolded before that settled and
+ * carry the singular spelling, so both are accepted. New installs always get the plural
+ * (`Config.playbookDir`), and nothing new should be written with the singular.
+ *
+ * `.playbook` and the bare `agent-playbook` are older conventions still in the wild.
+ */
+export const NESTED_PLAYBOOK_DIRS = ['.agents-playbook', '.agent-playbook', '.playbook', 'agent-playbook'];
 
 /**
  * Find the playbook root.
