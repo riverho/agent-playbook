@@ -1215,7 +1215,7 @@ function cmdValidate(args) {
   if (hollowActionable.length) {
     console.log(`\n⚠ Hollow gate warning: ${hollowActionable.length} actionable task(s) use only structural checks (pb validate):`);
     for (const t of hollowActionable) console.log(`  ⚠hollow  [${t.id}] ${t.title || ''}`);
-    console.log('Add task-specific acceptance_checks that test the work itself. Run \`node scripts/check-hollow.mjs .\` for details.');
+    console.log('Add task-specific acceptance_checks that test the work itself. Run `node scripts/check-hollow.mjs .` for details.');
     if (args.strict) { console.error('\nFailing (--strict): hollow gates on actionable tasks.'); process.exit(1); }
   }
 
