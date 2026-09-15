@@ -55,11 +55,16 @@ try {
   const listing = existsSync(archive)
     ? spawnSync('tar', ['-tzf', archive], { encoding: 'utf8' })
     : { status: 1, stdout: '' };
+  // bsdtar on Windows emits CRLF entry lines, which would leave a trailing "\r" on
+  // every name and make the membership test fail on an archive that is in fact
+  // correct. Normalize line endings before splitting (portable, no behavior change
+  // on LF platforms).
+  const entries = String(listing.stdout || '').split(/\r?\n/);
   assert('happy path builds a valid archive and checksum',
     result.status === 0 && existsSync(sidecar)
       && readFileSync(sidecar, 'utf8') === `${hash}  blogwatch-0.1.0.pbpack\n`
-      && listing.status === 0 && listing.stdout.split('\n').includes('pack.yaml')
-      && listing.stdout.split('\n').includes('mode.yaml'), result);
+      && listing.status === 0 && entries.includes('pack.yaml')
+      && entries.includes('mode.yaml'), result);
 
   const stray = fixture('stray');
   writeFileSync(resolve(stray.pack, 'stray.txt'), 'unlisted\n', 'utf8');

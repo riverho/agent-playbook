@@ -1,0 +1,19 @@
+# Test overlay for the DSH plugin: mounted ON TOP of the real web profile so nothing
+# on disk is modified. Used by scripts/test-dsh-plugin-profile.mjs.
+#
+# Two things this proves that the unit suites cannot:
+#   1. the loader accepts this `insert:` patch shape (a rejected patch is a silent no-op);
+#   2. the composed tree agrees that the plugin is enabled.
+# A third thing it can only WARN about: package resolution. The profile resolves harness
+# packages through the launcher's module fallback, so a plugin that is not installed
+# into a resolvable location still appears in the tree — a boot would be the proof, and
+# that needs a live session.
+- insert:
+    - id: agent-playbook-probe
+      name: '@riverho/dsh-agent-playbook'
+      config:
+        playbookPath: ''
+        injectContext: true
+        quietWhenIdle: true
+        maxContextChars: 4000
+        commandTimeoutMs: 120000

@@ -15,11 +15,30 @@ import { route, version, INTENTS } from './lib/nl-router.mjs';
 const CASES = [
   // precedence edges ------------------------------------------------------
   ['what\'s next?',                              'select'],
+  ['what is next?',                              'select'],
   ['claim the next task',                        'claim'],
   ['pick the next one',                          'claim'],
   ['let\'s do the next task',                    'claim'],
   ['next task',                                  'select'],
   ['show me the backlog',                        'select'],
+
+  // worktree ops beat the generic verbs they contain (the same shape as
+  // verify-task beating verify): naming a worktree is the specific request.
+  ['worker verify T7',                           'worker'],
+  ['worker status T7',                           'worker'],
+  ['worker create T7',                           'worker'],
+  ['open a worktree for T7',                     'worker'],
+  ['merge the branch',                           'worker'],
+
+  // multi-agent lease + recovery verbs
+  ['release the claim',                          'release-claim'],
+  ['give the task back',                         'release-claim'],
+  ['sweep abandoned claims',                     'release-claim'],
+  ['repair-state',                               'repair-state'],
+  ['rebuild the projection',                     'repair-state'],
+  ['the journal is ahead',                       'repair-state'],
+  ['unlock',                                     'unlock'],
+  ['clear the stuck lock',                       'unlock'],
 
   ['is it green?',                               'verify'],
   ['validate task oc-plugin',                    'verify-task'],

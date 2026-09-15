@@ -63,9 +63,16 @@ try {
 
   rmSync(resolve(scratch, 'modes/blogwatch'), { recursive: true, force: true });
   rmSync(resolve(scratch, 'modes/blogwatch.yaml'), { force: true });
+  // Strip the registration from the master's `modes:` map. Do it via the parsed
+  // document, not a line regex: the map's entries are each preceded by a comment
+  // line, so a `^\s{2}id:` substitution is brittle and silently no-ops when the
+  // source playbook gains or loses a comment — which is exactly how this test
+  // broke before. yaml.dump drops the map's comments, which is fine for a scratch
+  // fixture.
   const playbookPath = resolve(scratch, 'playbook.yaml');
-  writeFileSync(playbookPath,
-    readFileSync(playbookPath, 'utf8').replace(/^\s{2}blogwatch:.*\n/m, ''), 'utf8');
+  const masterDoc = yaml.load(readFileSync(playbookPath, 'utf8'));
+  delete masterDoc.modes.blogwatch;
+  writeFileSync(playbookPath, yaml.dump(masterDoc, { lineWidth: 100 }), 'utf8');
   const catalogPath = resolve(scratch, 'modes/index.yaml');
   const catalog = yaml.load(readFileSync(catalogPath, 'utf8'));
   catalog.modes = (catalog.modes || []).filter((m) => m.id !== 'blogwatch');

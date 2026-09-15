@@ -50,8 +50,12 @@ Precedence is **top-to-bottom, first match wins**. The agent must follow this or
 | 14 | `learn`         | "I learned …", "capture this lesson", "lesson: …"            | `learn --source user --notes "<lesson>"` |
 | 15 | `anchor`        | "re-anchor", "anchor", "replay the constitution"            | `anchor [--brief]` |
 | 16 | `checkpoint`    | "checkpoint", "resume", "after compaction/handoff"          | `checkpoint [--snapshot]` |
-| 17 | `scaffold`      | "scaffold into …", "install this playbook", "apply the playbook" | `scaffold --target <dir>` |
-| 18 | `help`          | "help", "what can you do", "commands available"              | `help` |
+| 17 | `worker`        | "worktree", "worker verify T7", "merge the branch", "isolated checkout" | `worker create\|status\|exec\|verify\|merge\|remove <id>` |
+| 18 | `release-claim` | "release the claim", "give the task back", "sweep abandoned claims" | `release --task <id> [--token <t>]` · `release --stale <minutes>` |
+| 19 | `repair-state`  | "repair-state", "rebuild the projection", "the journal is ahead" | `repair-state --check` \| `--apply` |
+| 20 | `unlock`        | "unlock", "clear the stuck lock"                             | `unlock [--force]` |
+| 21 | `scaffold`      | "scaffold into …", "install this playbook", "apply the playbook" | `scaffold --target <dir>` |
+| 22 | `help`          | "help", "what can you do", "commands available"              | `help` |
 | —  | `unknown`       | anything that doesn't match                                  | (no command; show `route(text).hints`) |
 
 ## How to apply (the agent's job)

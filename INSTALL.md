@@ -196,6 +196,35 @@ If the target already has `processes/index.*`, `skills/index.*`, or a durable me
 
 Full judgment steps in `processes/install.yaml` / `skills/install/SKILL.md`.
 
+## Git contract — runtime state is LOCAL, never tracked (IMPORTANT)
+
+`pb` keeps its runtime state in `memory/` (backlog.yaml, backlog-state.json, journal.ndjson,
+loops.yaml, cycle.md, lessons.ndjson) and `artifacts/` (loop close reports, snapshots, logs).
+**That state is local truth and must NOT be committed to git.**
+
+Why: a git-tracked journal gets *reverted by merges* — `git checkout` / `git stash` restore the
+working tree to the committed state, silently discarding records you already appended. This
+destroyed real evidence (WT18/WT22 in Wenmei, 5 Aug 2026). `pb validate` warns and `pb loop close`
+refuses when they detect the trap.
+
+The contract:
+
+```bash
+# after scaffolding into a repo that tracks its playbook:
+git rm -r --cached .agents-playbook/memory .agents-playbook/artifacts
+git commit -m "chore: untrack pb runtime state — local, never reverted by merges"
+```
+
+- **Engine source** (`scripts/`, `modes/`, `skills/`, `processes/`, `playbook.yaml`, `SKILL.md`,
+  `README.md`, `INSTALL.md`) MAY be tracked — it is the versioned contract and syncs across machines.
+- **Runtime state** (`memory/`, `artifacts/`) MUST NOT be tracked — it is per-vault evidence.
+- `.gitignore` should mirror this: ignore `.agents-playbook/*` then re-include the engine dirs, or
+  simply ignore `.agents-playbook/memory/` and `.agents-playbook/artifacts/`.
+
+> Note for Windows: the guard uses `execFileSync` with stdio options, not `execSync` with a
+> `2>/dev/null` redirect — a POSIX redirection silently fails under `cmd.exe`, which disabled an
+> earlier version of this guard on exactly the platform where it was needed.
+
 ## Wire config
 
 - Add `js-yaml` to the target `package.json` and namespaced `pb` scripts

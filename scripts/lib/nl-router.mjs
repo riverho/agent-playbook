@@ -36,6 +36,28 @@ export const version = '1.0.0';
 // `commands` are the pb shell form(s) the agent should run.
 // `patterns` are JS regex sources; we wrap them with the `i` flag.
 export const INTENTS = [
+  // -- worktree ops (MUST precede the generic verbs) ---------------------
+  // "worker verify T7" contains a verb with its own intent, and "worker status T7"
+  // reads like a bare status ask. Naming a worktree is the more specific request, so
+  // it is matched first — the same reason verify-task precedes verify.
+  {
+    id: 'worker',
+    summary: 'Isolated git worktree for a task: create, inspect, run in, verify, merge, remove.',
+    commands: [
+      'node scripts/pb.mjs worker create <id> --agent <a> --execute',
+      'node scripts/pb.mjs worker status <id> --json',
+      'node scripts/pb.mjs worker verify <id>',
+      'node scripts/pb.mjs worker merge <id> --execute',
+      'node scripts/pb.mjs worker remove <id> --delete-branch --execute',
+    ],
+    patterns: [
+      /\bwork[\s-]?tree\b/,
+      /\bworker\s+(create|status|exec|verify|merge|remove)\b/,
+      /\b(isolated|separate)\s+(checkout|branch|tree)\b/,
+      /\bmerge\s+(the\s+)?(branch|worktree|worker)\b/,
+    ],
+  },
+
   // -- scoped verify (must precede generic verify) -----------------------
   {
     id: 'verify-task',
@@ -91,7 +113,7 @@ export const INTENTS = [
     summary: 'Peek at the next task without claiming it.',
     commands: ['node scripts/pb.mjs next'],
     patterns: [
-      /\bwhat'?s\s+next\b/,
+      /\bwhat('s|\s+is)\s+next\b/,
       /\bnext\s+(task|up)\b/,
       /\bshow\s+(me\s+)?(the\s+)?(queue|backlog)\b/,
       /\bwhat\s+(should|do)\s+(i|we)\s+do\s+next\b/,
@@ -230,6 +252,45 @@ export const INTENTS = [
       /\bafter\s+(a\s+)?handoff\b/,
     ],
   },
+  // -- multi-agent lease + recovery verbs ---------------------------------
+  {
+    id: 'release-claim',
+    summary: 'Give a claim back to the pool (holder, token, or delegation chain authorizes it).',
+    commands: [
+      'node scripts/pb.mjs release --task <id>',
+      'node scripts/pb.mjs release --task <id> --token <claim-token>',
+      'node scripts/pb.mjs release --stale <minutes>',
+    ],
+    patterns: [
+      /\brelease\s+(the\s+)?(claim|task|it)\b/,
+      /\bgive\s+(it|the\s+task)\s+back\b/,
+      /\bput\s+(it|the\s+task)\s+back\s+(in\s+the\s+)?(pool|queue)\b/,
+      /\bsweep\s+(abandoned\s+)?claims\b/,
+    ],
+  },
+  {
+    id: 'repair-state',
+    summary: 'Rebuild the state projection from the append-only journal, or check it for drift.',
+    commands: [
+      'node scripts/pb.mjs repair-state --check',
+      'node scripts/pb.mjs repair-state --apply',
+    ],
+    patterns: [
+      /\brepair[\s-]?state\b/,
+      /\brebuild\s+(the\s+)?(state|projection)\b/,
+      /\bstate\s+(has\s+)?drift(ed)?\b/,
+      /\bjournal\s+(is\s+)?ahead\b/,
+    ],
+  },
+  {
+    id: 'unlock',
+    summary: 'Report and clear a leaked state/worker lock.',
+    commands: ['node scripts/pb.mjs unlock', 'node scripts/pb.mjs unlock --force'],
+    patterns: [
+      /\bunlock\b/,
+      /\b(clear|release|drop)\s+(the\s+)?(stuck|leaked|stale)\s+lock\b/,
+    ],
+  },
   {
     id: 'scaffold',
     summary: 'Copy this engine into another repo (copy-don\u2019t-clobber).',
@@ -315,7 +376,11 @@ export function route(text) {
 
 // CLI shim — lets humans / agents dry-run the matcher without writing JS.
 // Usage:   node scripts/lib/nl-router.mjs "what's next?"
-if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`) {
+// The guard tolerates an ABSENT argv[1] (a programmatic import, `node -e`, or a piped
+// entry point): an unguarded `.replace` on it throws a TypeError that kills the import
+// for every consumer that is not a plain file invocation.
+const invokedPath = process.argv[1];
+if (invokedPath && import.meta.url === `file:///${invokedPath.replace(/\\/g, '/')}`) {
   const text = process.argv.slice(2).join(' ').trim();
   const out = route(text);
   console.log(JSON.stringify(out, null, 2));

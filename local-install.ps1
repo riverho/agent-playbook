@@ -41,7 +41,8 @@ npm link
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # 4. verify
-$pbPath = (Get-Command $BIN -ErrorAction SilentlyContinue)?.Source
+$pbCmd = Get-Command $BIN -ErrorAction SilentlyContinue
+$pbPath = if ($pbCmd) { $pbCmd.Source } else { $null }
 if ($pbPath) {
     Write-Host "==> pb on PATH: $pbPath"
     & $BIN help 2>$null | Out-Null

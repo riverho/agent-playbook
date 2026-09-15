@@ -1,0 +1,231 @@
+#!/usr/bin/env node
+// ============================================================================
+//  pack-dsh-plugin.mjs — build the plugin's bundled engine, then verify the package.
+// ----------------------------------------------------------------------------
+//  Why bundle: without it a deployment does two installs and can drift from the engine
+//  the plugin was tested against. With it the plugin carries a known-good engine, and
+//  `playbook action=init` scaffolds a workspace playbook from it. A workspace copy
+//  always wins at runtime — that is where the project's truth (backlog, journal) lives.
+//
+//  What is copied is the ENGINE, not this repository: no tests, no adapters for other
+//  harnesses, no loop artifacts, no memory of this repo's own work, no nested plugin.
+//
+//  STDOUT DISCIPLINE: `prepack` runs this during `npm pack`, and `npm pack --json`
+//  reserves stdout for its result. Every human line therefore goes to stderr — a build
+//  log on stdout corrupts the caller's JSON (observed as a pack that succeeds whose
+//  output will not parse).
+//
+//  Usage: node scripts/pack-dsh-plugin.mjs [--force] [--json] [--clean] [--pack [--dry-run]]
+// ============================================================================
+
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const log = (...parts) => console.error(...parts);
+const emitJson = (obj) => process.stdout.write(`${JSON.stringify(obj)}\n`);
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const PLUGIN = join(ROOT, 'dsh-plugin');
+const ENGINE = join(PLUGIN, 'engine');
+
+const INCLUDE_DIRS = ['scripts', 'processes', 'skills', 'modes'];
+const INCLUDE_FILES = ['playbook.yaml', 'SKILL.md', 'AGENTS.md', 'README.md', 'INSTALL.md', 'LICENSE'];
+
+// Excluded inside the included dirs: suites and fixtures are for DEVELOPING the engine,
+// not for running it inside a plugin.
+const EXCLUDE_PATTERNS = [
+  /^scripts[/\\]test-.*\.mjs$/i,
+  /^scripts[/\\]check-.*\.mjs$/i,
+  /^scripts[/\\]concurrency-smoke\.mjs$/i,
+  /^scripts[/\\]lib[/\\]/i,
+  /^scripts[/\\]pb-daily-monitor\.mjs$/i,
+  /^scripts[/\\]pb-flow\.mjs$/i,
+  /^scripts[/\\]pb-pack\.mjs$/i,
+  /^scripts[/\\]attention-research-daily\.mjs$/i,
+  /^scripts[/\\]wiki-news-daily\.mjs$/i,
+  /^scripts[/\\]verify-attention-research-output\.mjs$/i,
+  /^scripts[/\\]pack-dsh-plugin\.mjs$/i,
+  /^modes[/\\][^/\\]+[/\\]config[/\\]/i,
+];
+const shouldExclude = (rel) => EXCLUDE_PATTERNS.some((re) => re.test(rel));
+
+function dirSize(dir) {
+  let total = 0;
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, e.name);
+    total += e.isDirectory() ? dirSize(full) : statSync(full).size;
+  }
+  return total;
+}
+
+function engineVersionOf(pbPath) {
+  try {
+    const pkg = JSON.parse(readFileSync(join(pbPath, '..', '..', 'package.json'), 'utf8'));
+    return typeof pkg.version === 'string' ? pkg.version : null;
+  } catch {
+    return null;
+  }
+}
+
+function validateBundle() {
+  const r = spawnSync(process.execPath, [join(ENGINE, 'scripts', 'pb.mjs'), 'validate'], { cwd: ENGINE, encoding: 'utf8' });
+  if (r.status !== 0) log(`${r.stdout || ''}${r.stderr || ''}`);
+  return r.status === 0;
+}
+
+function build() {
+  if (existsSync(ENGINE)) rmSync(ENGINE, { recursive: true, force: true });
+  mkdirSync(ENGINE, { recursive: true });
+
+  const copyIf = (rel) => {
+    const from = join(ROOT, rel);
+    if (!existsSync(from) || shouldExclude(rel)) return;
+    const to = join(ENGINE, rel);
+    mkdirSync(dirname(to), { recursive: true });
+    cpSync(from, to, { recursive: true });
+  };
+
+  for (const f of INCLUDE_FILES) copyIf(f);
+  for (const d of INCLUDE_DIRS) {
+    const src = join(ROOT, d);
+    if (!existsSync(src)) continue;
+    const walk = (dir, prefix) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const rel = `${prefix}/${entry.name}`;
+        if (entry.isDirectory()) {
+          if (shouldExclude(rel)) continue;
+          walk(join(dir, entry.name), rel);
+        } else if (!shouldExclude(rel)) {
+          copyIf(rel);
+        }
+      }
+    };
+    walk(src, d);
+  }
+
+  // A `pb scaffold` copies the engine from the directory containing pb.mjs, so the
+  // bundled tree must itself be a playbook root: keep the memory template, never this
+  // repository's records.
+  mkdirSync(join(ENGINE, 'memory'), { recursive: true });
+  const pm = join(ROOT, 'memory', 'project-memory.md');
+  if (existsSync(pm)) cpSync(pm, join(ENGINE, 'memory', 'project-memory.md'));
+
+  const enginePkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  writeFileSync(join(ENGINE, 'package.json'), JSON.stringify({
+    name: 'agent-playbook-engine',
+    version: enginePkg.version,
+    private: true,
+    type: 'module',
+    description: 'Agent-Playbook engine bundled with @riverho/dsh-agent-playbook.',
+    dependencies: { 'js-yaml': '^4.1.0' },
+    engines: { node: '>=18' },
+  }, null, 2) + '\n', 'utf8');
+
+  // Give the bundled tree its runtime files. `pb init` is the engine's own
+  // never-overwrites hydration step, so the bundle IS a runnable playbook rather than a
+  // template that fails `validate` the first time it runs.
+  const init = spawnSync(process.execPath, [join(ENGINE, 'scripts', 'pb.mjs'), 'init'], { cwd: ENGINE, encoding: 'utf8' });
+  if (init.status !== 0) {
+    log('  ERROR: the bundled engine could not initialize itself:');
+    log(`${init.stdout || ''}${init.stderr || ''}`);
+    process.exit(1);
+  }
+
+  const ok = existsSync(join(ENGINE, 'scripts', 'pb.mjs'));
+  log(`bundled engine  → ${ENGINE}`);
+  log(`  engine version: ${enginePkg.version}`);
+  log(`  pb.mjs present: ${ok ? 'yes' : 'NO — the bundle is unusable'}`);
+  log(`  self-validate:  ${validateBundle() ? 'green' : 'FAILED'}`);
+  log(`  size:           ${(dirSize(ENGINE) / 1024).toFixed(0)} KiB`);
+  if (!ok) process.exit(1);
+
+  // A bundle that carries this repository's work would leak it into every deployment.
+  for (const leak of ['memory/backlog-state.json', '.git', 'dsh-plugin', 'node_modules']) {
+    if (existsSync(join(ENGINE, leak))) {
+      log(`  ERROR: the bundle contains ${leak} — that is not engine material.`);
+      process.exit(1);
+    }
+  }
+  const bundledBacklog = join(ENGINE, 'memory', 'backlog.yaml');
+  if (existsSync(bundledBacklog) && !/First task/.test(readFileSync(bundledBacklog, 'utf8'))) {
+    log('  ERROR: the bundle carries a real backlog — that is this repository\'s work, not engine material.');
+    process.exit(1);
+  }
+  return { rebuilt: true, version: enginePkg.version, engine: ENGINE, size: dirSize(ENGINE) };
+}
+
+// The tarball can only contain what `files` lists, and `files` is easy to get wrong
+// silently — an empty bundle ships a plugin that loads and then does nothing.
+function checkManifest(builtVersion) {
+  const pluginPkg = JSON.parse(readFileSync(join(PLUGIN, 'package.json'), 'utf8'));
+  const problems = [];
+  if (!Array.isArray(pluginPkg.files) || !pluginPkg.files.includes('engine/')) {
+    problems.push('`files` does not include "engine/" — npm would ship a plugin with no engine');
+  }
+  if (pluginPkg.version !== builtVersion) {
+    problems.push(`version drift: plugin ${pluginPkg.version} vs bundled engine ${builtVersion} — bump the plugin so the pair is identifiable`);
+  }
+  if (!pluginPkg.dependencies || !pluginPkg.dependencies['js-yaml']) {
+    problems.push('js-yaml is not declared — the engine copied into a workspace cannot run without it');
+  }
+  if (!pluginPkg.scripts || pluginPkg.scripts.prepack !== 'node ../scripts/pack-dsh-plugin.mjs') {
+    problems.push('no `prepack` hook — publishing would ship whatever bundle happened to be on disk');
+  }
+  if (problems.length) {
+    log('\nmanifest checks FAILED:');
+    for (const p of problems) log(`  ! ${p}`);
+    process.exit(1);
+  }
+  log('  manifest:       files/version/js-yaml/prepack OK');
+}
+
+function runPack(dry) {
+  const npmCli = process.env.npm_execpath
+    || join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  // Invoke npm's CLI entry directly: passing args through a shell is deprecated and
+  // loses argument escaping.
+  const r = spawnSync(process.execPath, [npmCli, 'pack', ...(dry ? ['--dry-run'] : []), '--json'], {
+    cwd: PLUGIN, encoding: 'utf8',
+  });
+  log(`\nnpm pack ${dry ? '(dry run) ' : ''}exit=${r.status}`);
+  let parsed = null;
+  try { parsed = JSON.parse(r.stdout); } catch { /* printed below */ }
+  if (parsed && parsed[0]) {
+    const f = parsed[0];
+    log(`  tarball:   ${f.filename}`);
+    log(`  unpacked:  ${(f.unpackedSize / 1024).toFixed(0)} KiB across ${f.entryCount} files`);
+    const hasEngine = (f.files || []).some((x) => /^engine\/scripts\/pb\.mjs$/.test(x.path));
+    log(`  engine in tarball: ${hasEngine ? 'yes' : 'NO — the published plugin would not work'}`);
+    if (!hasEngine) process.exit(1);
+  } else {
+    log(`${r.stdout || ''}${r.stderr || ''}`.trim().slice(0, 2000));
+  }
+  if (r.status !== 0) process.exit(r.status || 1);
+}
+
+// --- main --------------------------------------------------------------------
+const args = process.argv.slice(2);
+
+if (args.includes('--clean')) {
+  rmSync(ENGINE, { recursive: true, force: true });
+  log(`removed ${ENGINE}`);
+  process.exit(0);
+}
+
+const repoVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
+const builtPb = join(ENGINE, 'scripts', 'pb.mjs');
+const upToDate = !args.includes('--force') && existsSync(builtPb) && engineVersionOf(builtPb) === repoVersion;
+
+let built;
+if (upToDate) {
+  log(`bundled engine  → ${ENGINE} (already at ${repoVersion}; pass --force to rebuild)`);
+  built = { rebuilt: false, version: repoVersion, engine: ENGINE };
+} else {
+  built = build();
+}
+checkManifest(built.version);
+
+if (args.includes('--pack')) runPack(args.includes('--dry-run'));
+else if (args.includes('--json')) emitJson(built);

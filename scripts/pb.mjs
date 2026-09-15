@@ -23,11 +23,12 @@
 //  Only dependency: js-yaml.
 // ============================================================================
 
-import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, copyFileSync, cpSync, openSync, closeSync, statSync, unlinkSync, rmSync, readdirSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, copyFileSync, cpSync, openSync, closeSync, statSync, unlinkSync, rmSync, readdirSync, mkdtempSync, renameSync } from 'node:fs';
 import { execSync, execFileSync, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve, dirname, join, isAbsolute, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
 import yaml from 'js-yaml';
 
 // --- root + base helpers ---------------------------------------------------
@@ -121,8 +122,20 @@ function spawnCommand(file, argv, opts = {}) {
   return spawn(resolveExecutable(file), argv, { ...opts, windowsHide: true });
 }
 
-function shellSplit(cmd) {
-  const out = [];
+// Path helper for the tracked-state guard: a repo-relative POSIX path, or null when
+// `child` is not inside `parent`. Both sides are normalised because git reports the
+// toplevel with forward slashes while node's `resolve` uses backslashes on Windows —
+// comparing them raw silently concludes "outside the repo" and disables the guard.
+function relPosix(child, parent) {
+  const norm = (s) => resolve(s).replace(/\\/g, '/').replace(/\/+$/, '');
+  const c = norm(child);
+  const p = norm(parent);
+  if (c === p) return null;
+  if (!c.startsWith(`${p}/`)) return null;
+  return c.slice(p.length + 1);
+}
+
+function shellSplit(cmd) {  const out = [];
   let cur = '';
   let quote = null;
   for (let i = 0; i < cmd.length; i++) {
@@ -171,16 +184,146 @@ function readJournal() {
       catch { return { __malformed: true, __line: i + 1, raw: l }; }
     });
 }
+// --- journal ordering + attribution (multi-agent) ----------------------------
+// The journal is append-only, so file order IS write order — but ISO timestamps
+// collide at millisecond resolution under concurrency and cannot answer "who
+// wrote first". Every row therefore carries a monotonic `seq`, allocated from the
+// same serialized transaction as the state touch, plus the writer's identity.
+// This makes "who wrote what, in what order, and on whose behalf" a recorded
+// fact rather than an inference from clocks.
+function stampOrigin(entry, agent) {
+  const origin = { origin_agent: agent };
+  if (process.env.PB_AGENT_ID) origin.origin_agent_id = process.env.PB_AGENT_ID;
+  if (process.env.PB_SESSION_ID) origin.origin_session_id = process.env.PB_SESSION_ID;
+  if (process.env.PB_PARENT_AGENT_ID) origin.origin_parent_agent_id = process.env.PB_PARENT_AGENT_ID;
+  if (process.env.PB_RUNTIME) origin.origin_runtime = process.env.PB_RUNTIME;
+  return { ...entry, ...origin };
+}
+function journalSeq() {
+  const who = resolveAgentId({});
+  try {
+    return withStateTxn((draft, ctx) => {
+      const n = (typeof draft.__journal_seq === 'number' ? draft.__journal_seq : 0) + 1;
+      draft.__journal_seq = n;
+      draft.__seq = ctx.seq;
+      draft.__written_at = nowISO();
+      draft.__written_by = who;
+      return n;
+    }, { agent: who });
+  } catch (e) {
+    if (!(e instanceof StateTxnBusy)) throw e;
+    console.error('WARNING: could not acquire the state lock to number a journal row — writing it unnumbered.');
+    return undefined;
+  }
+}
 function appendJournal(entry) {
   ensureDir(MEMORY_DIR);
-  appendFileSync(p(JOURNAL), JSON.stringify(entry) + '\n', 'utf8');
+  const agent = entry.agent || resolveAgentId({});
+  const stamped = stampOrigin(entry, agent);
+  if (typeof stamped.seq === 'number') {
+    appendFileSync(p(JOURNAL), JSON.stringify(stamped) + '\n', 'utf8');
+    return stamped;
+  }
+  const seq = journalSeq();
+  appendFileSync(p(JOURNAL), JSON.stringify({ ...stamped, seq }) + '\n', 'utf8');
+  return { ...stamped, seq };
 }
-function recordAuto(loop, task, status, checksOutcome, notes) {
+// The ONE place that writes a task entry: merge the mutator's patch over the
+// existing entry and stamp the ordering + attribution every write must carry.
+// Every write path goes through here so no path can produce an unstamped entry —
+// an unstamped entry is exactly what makes "who wrote last" unanswerable.
+//
+// Clearing a field needs explicit intent: `undefined` values are FILTERED OUT of a
+// patch (so an absent key never erases data by accident), which silently made
+// `pb release` leave `claimed_by`/`claim_token` behind — a leaked lease. A patch
+// therefore clears fields by naming them in `__unset: [...]`.
+function applyTaskMutation(taskId, mutator, ctx, agent) {
+  const existing = (ctx.draft && ctx.draft[taskId]) || {};
+  const patch = (typeof mutator === 'function' ? mutator({ ...existing }, ctx) : mutator) || {};
+  const { __unset, ...rest } = patch;
+  const clean = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
+  const next = { ...existing, ...clean, seq: ctx.seq, updated_by: agent };
+  for (const key of Array.isArray(__unset) ? __unset : []) delete next[key];
+  ctx.draft[taskId] = next;
+  return next;
+}
+
+// Commit a journal row AND the task-state touch inside ONE transaction, so append
+// order and state-update order are the same order. Splitting them into two
+// transactions is a protocol hole: two agents recording the same task can
+// interleave as A-journal, B-journal, B-state, A-state, after which the journal
+// credits B as last writer while the state credits A — the two records the user
+// reads then disagree about who wrote last (observed as a flaky drift assertion
+// before this existed).
+//   journalEntry: row WITHOUT `seq` (the transaction allocates it)
+//   mutator: (existing, ctx) => patch   — must NOT call appendJournal (same lock)
+function commitIteration(taskId, journalEntry, mutator, { agent = 'agent', timeoutMs = 30000 } = {}) {
+  ensureDir(MEMORY_DIR);
+  try {
+    return withStateTxn((draft, ctx) => {
+      ctx.draft = draft;
+      appendJournal({ ...journalEntry, seq: ctx.seq });
+      return applyTaskMutation(taskId, mutator, ctx, agent);
+    }, { agent, timeoutMs });
+  } catch (e) {
+    if (!(e instanceof StateTxnBusy)) throw e;
+    console.error('ERROR: could not acquire the state lock (another agent is writing). Nothing was recorded — re-run.');
+    return null;
+  }
+}
+// The autonomous driver writes through the same multi-agent contract as any other
+// writer: it presents the claim token it minted when it took the task. Without that,
+// its rows would be stamped `ownership: unproven` — indistinguishable from an
+// unentitled write, which is exactly what the ownership flag exists to spot. A caller
+// with no token gets a recorded, WARNED unproven row rather than a silent one.
+// --- tracked-state trap guard ------------------------------------------------
+// The pb runtime state (memory/, artifacts/) is local truth and must NOT be committed
+// to git: a tracked journal gets reverted by merges (checkout/stash), silently
+// destroying records. This guard detects the trap.
+//
+// Ported from the upstream guard (commit 87153a1) with two fixes, because as written it
+// could never fire on Windows — which is where it was needed:
+//   1. the upstream used `execSync('git rev-parse --show-toplevel 2>/dev/null')`. That
+//      redirect is POSIX shell syntax; under cmd.exe it fails, the try/catch swallows it,
+//      and the function returns early EVERY time. Use execFileSync with stdio options —
+//      no shell, no redirect, portable.
+//   2. the upstream used `require('child_process')` inside this ESM module, where
+//      `require` is undefined. Even past (1) it would have thrown a ReferenceError from
+//      inside `pb validate`. The import already exists at the top of this file.
+// The two are independent: (1) made it dead code, (2) made it a landmine if reached.
+function trackedStateWarnings() {
+  const warnings = [];
+  const top = gitIn(ROOT, ['rev-parse', '--show-toplevel']);
+  if (!top) return warnings; // not a git checkout — nothing to protect against
+  const rel = relPosix(p(JOURNAL), top);
+  if (!rel) return warnings; // journal lives outside this repo
+  // `--error-unmatch` exits non-zero when the path is NOT tracked, which is the
+  // healthy case; a missing file exits non-zero too and is equally fine.
+  const tracked = gitIn(ROOT, ['ls-files', '--error-unmatch', rel]);
+  if (!tracked) return warnings;
+
+  warnings.push(`TRACKED-STATE TRAP: ${rel} is committed to git. Merges (checkout/stash) can revert it and silently erase records. Run \`git rm -r --cached ${rel.split('/')[0]}\` (or the whole playbook memory dir) to make pb state local.`);
+  // A journal with records newer than its last commit is at immediate risk.
+  const lastCommit = Number(gitIn(ROOT, ['log', '-1', '--format=%ct', '--', rel]) || 0);
+  try {
+    const rows = readJournal().filter((r) => r && !r.__malformed && r.ts);
+    const newest = rows.reduce((m, r) => Math.max(m, new Date(r.ts).getTime() / 1000), 0);
+    if (newest > lastCommit) {
+      warnings.push(`  → ${rows.length} journal row(s) are NEWER than the journal's last commit (${lastCommit ? new Date(lastCommit * 1000).toISOString().slice(0, 19) : 'never committed'}): a merge can discard them.`);
+    }
+  } catch { /* journal may not exist yet */ }
+  return warnings;
+}
+function recordAuto(loop, task, status, checksOutcome, notes, { agent = 'auto', claimToken = null } = {}) {
+  const ownership = verifyTaskClaim(task.id, { agent, token: claimToken });
   const entry = {
     ts: nowISO(),
     loop_id: loop.id,
     task: task.id,
-    agent: 'auto',
+    agent,
+    agent_id: agent,
+    claimed_by: ownership.holder || agent,
+    ownership: ownership.status,
     action: 'auto-execute',
     status,
     checks: checksOutcome,
@@ -188,12 +331,66 @@ function recordAuto(loop, task, status, checksOutcome, notes) {
     files: [],
     notes,
   };
-  appendJournal(entry);
-  updateBacklogState(task.id, { status, updated_at: entry.ts });
-  console.log(`Recorded [${task.id}] auto-execute → ${status}${checksOutcome !== 'none' ? ` (checks: ${checksOutcome})` : ''}`);
+  if (!ownership.ok) {
+    entry.ownership_violation = true;
+    console.error(`WARNING: [${task.id}] is held by "${ownership.holder}" but the auto runner (agent ${agent}) cannot prove ownership — recording anyway, flagged ownership=unproven.`);
+  }
+  commitIteration(task.id, entry, () => ({ status, updated_at: entry.ts }), { agent });
+  console.log(`Recorded [${task.id}] auto-execute → ${status}${checksOutcome !== 'none' ? ` (checks: ${checksOutcome})` : ''} (ownership: ${entry.ownership})`);
 }
 
 const BACKLOG_STATE = join(dirname(BACKLOG), 'backlog-state.json');
+
+// --- shared-state transaction (multi-agent safety) ---------------------------
+// Every mutation of the shared state file goes through withStateTxn. The naive
+// version of this code read the WHOLE state object, patched one task, and wrote
+// the whole object back — so two agents whose read-modify-write windows overlapped
+// silently discarded each other's work (lost update), and a crash mid-write could
+// leave truncated JSON. Three guarantees instead:
+//   1. SERIALIZED — a transaction holds an O_EXCL lock, so the read and the write
+//      are one critical section. Reads stay lock-free (a rename is atomic).
+//   2. ATOMIC — the new bytes land in a sibling temp file and are renamed over the
+//      target, so a reader never sees a half-written object and a crash leaves the
+//      previous revision intact.
+//   3. ORDERED + ATTRIBUTED — each state change is stamped with a monotonic touch
+//      sequence and the agent that made it, so "who wrote first / who wrote last"
+//      is answerable from the records.
+// Carry-on, like the claim lock: a lockfile and a rename, no daemon and no DB.
+const STATE_LOCK = `${BACKLOG_STATE}.lock`;
+// Test levers, not product surface:
+//   PB_TXN_TEST_DELAY_MS      hold a writer INSIDE its critical section (serialized)
+//   PB_TXN_TEST_PRELOCK_MS    hold a writer BEFORE it contends for the lock, so N
+//                             processes arrive together instead of staggered by
+//                             process start-up. Together these make the race
+//                             adversarial: all writers pile up on the lock at once.
+const TXN_TEST_DELAY_MS = Math.max(0, Number(process.env.PB_TXN_TEST_DELAY_MS) || 0);
+const TXN_TEST_PRELOCK_MS = Math.max(0, Number(process.env.PB_TXN_TEST_PRELOCK_MS) || 0);
+function txnTestDelay() {
+  if (TXN_TEST_DELAY_MS > 0) busySleepMs(TXN_TEST_DELAY_MS);
+}
+
+// Atomic replace with a small retry: on Windows a rename over a file another
+// process (or an indexer/AV scanner) holds open can fail transiently with
+// EPERM/EBUSY/EACCES. Retry briefly, then fall back to a direct write so a
+// mutation is never lost to a transient sharing violation.
+function atomicReplace(absPath, text) {
+  const tmp = `${absPath}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(tmp, text, 'utf8');
+  let lastErr = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      renameSync(tmp, absPath);
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (!['EPERM', 'EBUSY', 'EACCES', 'EEXIST', 'ENOTEMPTY'].includes(e.code)) break;
+      busySleepMs(20 * (attempt + 1));
+    }
+  }
+  try { unlinkSync(tmp); } catch { /* best effort */ }
+  if (process.env.PB_DEBUG) console.error(`[pb] atomicReplace retried past ${lastErr?.code}; writing in place`);
+  writeFileSync(absPath, text, 'utf8');
+}
 
 function readBacklogState() {
   try {
@@ -206,18 +403,72 @@ function readBacklogState() {
 
 function writeBacklogState(state) {
   ensureDir(dirname(BACKLOG_STATE));
-  writeFileSync(p(BACKLOG_STATE), JSON.stringify(state, null, 2) + '\n', 'utf8');
+  atomicReplace(p(BACKLOG_STATE), JSON.stringify(state, null, 2) + '\n');
 }
 
-function updateBacklogState(taskId, patch) {
-  const state = readBacklogState();
-  const existing = state[taskId] || {};
-  const cleanPatch = Object.fromEntries(Object.entries(patch || {}).filter(([, v]) => v !== undefined));
-  state[taskId] = {
-    ...existing,
-    ...cleanPatch,
-  };
-  writeBacklogState(state);
+// Monotonic touch sequence stored INSIDE the object so the counter is versioned
+// with the data it orders and needs no separate bookkeeping file. One increment
+// per transaction: read the current value, hand it to the mutator, write it back.
+function touchSeqOf(state) {
+  return typeof state.__seq === 'number' ? state.__seq : 0;
+}
+function stateMeta(state) {
+  return { seq: touchSeqOf(state), written_at: state.__written_at, written_by: state.__written_by };
+}
+
+// Serialized read-modify-write of the whole state object. `mutator(draft, ctx)`
+// receives a fresh draft read INSIDE the lock and mutates it in place; it may
+// return a value, which is passed back to the caller. Throws PB_TXN_BUSY if the
+// lock cannot be taken (the caller decides whether that is fatal).
+class StateTxnBusy extends Error {}
+// Wait for the lock rather than failing fast: N agents sharing one backlog queue
+// behind each other, and a transaction can legitimately run long (a `record
+// --status done` runs acceptance_checks inside it). Giving up early would turn
+// ordinary contention into a lost record. A genuinely stuck holder is handled by
+// the age-based stale break in acquireLock, not by a short timeout.
+function withStateTxn(mutator, { agent = 'agent', timeoutMs = 5 * 60_000 } = {}) {
+  ensureDir(dirname(BACKLOG_STATE));
+  if (TXN_TEST_PRELOCK_MS > 0) busySleepMs(TXN_TEST_PRELOCK_MS);
+  if (acquireLock(STATE_LOCK, { timeoutMs, staleMs: LOCK_STALE_MS })) {
+    try {
+      // Delay AFTER the lock is held: concurrent writers must queue here, which is
+      // exactly the property the stress test asserts.
+      txnTestDelay();
+      const draft = readBacklogState();
+      // The per-task seq is the dispatch order that crossed the commit point, so a
+      // writer queued behind a slow transaction can never claim an earlier position.
+      const seq = touchSeqOf(draft) + 1;
+      const result = mutator(draft, { seq, agent });
+      draft.__seq = seq;
+      draft.__written_at = nowISO();
+      draft.__written_by = agent;
+      writeBacklogState(draft);
+      return result;
+    } finally {
+      releaseLock(STATE_LOCK);
+    }
+  }
+  throw new StateTxnBusy('state lock');
+}
+
+// Convenience wrapper: patch ONE task entry transactionally. The per-task `seq`
+// is the dispatch order that crossed the commit point (so a queued-but-later
+// writer can never claim an earlier position), and `updated_by` is the writer.
+function updateBacklogState(taskId, mutator, { agent } = {}) {
+  const who = agent || resolveAgentId({});
+  try {
+    return withStateTxn((draft, ctx) => {
+      ctx.draft = draft;
+      return applyTaskMutation(taskId, mutator, ctx, who);
+    }, { agent: who });
+  } catch (e) {
+    if (!(e instanceof StateTxnBusy)) throw e;
+    // The touch was dropped. Journal attribution stays authoritative (the
+    // recovery path rebuilds state from the append-only journal), so we warn
+    // loudly rather than silently pretending the write happened.
+    console.error(`WARNING: could not acquire the state lock for [${taskId}] — the state touch was not recorded. Re-run, or run \`pb repair-state\` to rebuild state from the journal.`);
+    return null;
+  }
 }
 
 // agent identity — `--agent <id>` wins, then PB_AGENT_ID env, then default "agent".
@@ -227,6 +478,43 @@ function resolveAgentId(args = {}) {
   const env = process.env.PB_AGENT_ID;
   if (typeof env === 'string' && env.trim()) return env.trim();
   return 'agent';
+}
+
+// --- claim tokens + delegation chain (multi-agent ordering) ------------------
+// A claim is a lease: the holder gets a token, and a writer must be able to prove
+// it is either the holder or acting on the holder's behalf. This is what lets a
+// sub-agent write a result back WITHOUT the parent having to hand over its
+// identity — the sub-agent declares its parent and the chain is checked.
+//
+// PB_AGENT_CHAIN is the delegation path from the root agent to this writer
+// (comma-separated, root first). A writer may touch a task if ANY element of its
+// chain holds the claim. Without a token, ownership is unproven: the write is
+// still recorded (never silently dropped) but flagged, because silently refusing
+// would lose real work.
+function newClaimToken() {
+  return randomBytes(12).toString('hex');
+}
+function resolveAgentChain(args = {}) {
+  const raw = (args && typeof args.chain === 'string' && args.chain)
+    || process.env.PB_AGENT_CHAIN
+    || process.env.PB_PARENT_AGENT_ID
+    || '';
+  const chain = String(raw).split(',').map((s) => s.trim()).filter(Boolean);
+  const self = resolveAgentId(args);
+  if (!chain.includes(self)) chain.push(self);
+  return chain;
+}
+function verifyTaskClaim(taskId, args = {}, state = null) {
+  const entry = (state || readBacklogState())[taskId] || {};
+  const holder = entry.claimed_by || entry.agent_id || null;
+  if (!holder) return { ok: true, status: 'unclaimed', holder: null };
+  const token = (args && args.token) || process.env.PB_CLAIM_TOKEN || null;
+  if (token && entry.claim_token && token === entry.claim_token) {
+    return { ok: true, status: 'token', holder, token };
+  }
+  const chain = resolveAgentChain(args);
+  if (chain.includes(holder)) return { ok: true, status: 'chain', holder, chain };
+  return { ok: false, status: 'unproven', holder, chain };
 }
 // Which agent holds a task. Unstamped (legacy) tasks attribute to the default
 // agent "agent" — consistent with resolveAgentId's fallback — so single-agent
@@ -244,27 +532,94 @@ function busySleepMs(ms) {
   try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
   catch { /* SharedArrayBuffer unavailable: spin */ const end = Date.now() + ms; while (Date.now() < end) {} }
 }
-function acquireLock(lockPath, { timeoutMs = 5000, staleMs = 60000 } = {}) {
+// A lockfile is a claim, not a guarantee. Getting this wrong is SILENT: two
+// holders read the same state and both write, so one agent's work disappears with
+// no error anywhere. Two rules make it safe:
+//
+//   1. BREAK ONLY ON AGE, NEVER ON LIVENESS. An earlier version probed the
+//      holder's pid with `process.kill(pid, 0)` and broke the lock when the probe
+//      said the holder was gone. On Windows that probe misreported LIVE holders as
+//      dead (observed: `holderAlive=false` for a process that was mid-transaction),
+//      so a waiter stole an active lock and both holders read the same state —
+//      the exact corruption this layer exists to prevent. The asymmetry decides it:
+//      a lock held too long costs latency; a lock broken too early costs data.
+//      Age is the only signal that cannot be wrong about a live holder.
+//   2. RELEASE ONLY WHAT YOU OWN. A blind unlink can delete ANOTHER holder's lock.
+//      Each acquire writes a random token; release unlinks only if it still matches.
+//
+// The cost of rule 1: a holder killed mid-transaction leaves a lock that blocks
+// others until it ages past staleMs. That is deliberate — it is recoverable by
+// waiting or by deleting the file, whereas silent data loss is not.
+const LOCK_STALE_MS = Math.max(5000, Number(process.env.PB_LOCK_STALE_MS) || 10 * 60_000);
+// A SHORT-lived lock needs its own, much shorter stale window. The worker slot is
+// taken only around a `git worktree add` and a state write, so a holder still in
+// there a minute later is dead — while `withStateTxn` may legitimately hold its
+// lock for minutes (recording `done` runs acceptance_checks inside the lock).
+// Using one window for both means either a slow-but-alive record gets its lock
+// broken, or a crashed worker create blocks the repo for ten minutes.
+const WORKER_LOCK_STALE_MS = Math.max(5000, Number(process.env.PB_LOCK_STALE_MS) || 60_000);
+// How long a waiter blocks before giving up on a lock. Distinct from the stale
+// window, and deliberately generous: giving up early turns ordinary contention into
+// a lost record. A holder stuck past the stale window is broken, not waited out.
+const LOCK_WAIT_MS = Math.max(200, Number(process.env.PB_LOCK_WAIT_MS) || 5 * 60_000);
+const lockTokens = new Map();
+function acquireLock(lockPath, { timeoutMs = LOCK_WAIT_MS, staleMs = LOCK_STALE_MS } = {}) {
   const start = Date.now();
+  const token = randomBytes(8).toString('hex');
   for (;;) {
     try {
       const fd = openSync(lockPath, 'wx');
-      writeFileSync(fd, JSON.stringify({ pid: process.pid, ts: nowISO() }));
+      writeFileSync(fd, JSON.stringify({ pid: process.pid, token, ts: nowISO() }));
       closeSync(fd);
+      lockTokens.set(lockPath, token);
+      if (process.env.PB_TXN_TRACE) process.stderr.write(`[lock] ACQUIRE t=${Date.now()} ${basename(lockPath)} pid=${process.pid}\n`);
       return true;
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
-      // break a stale lock left by a dead/abandoned process.
+      // Break ONLY a lock that has aged past its window. Age is the only signal that
+      // cannot be wrong about a live holder; a liveness probe could (and did) misread
+      // an active holder as dead and steal its lock.
       try {
         const st = statSync(lockPath);
-        if (Date.now() - st.mtimeMs > staleMs) { try { unlinkSync(lockPath); continue; } catch { /* raced */ } }
+        if (Date.now() - st.mtimeMs > staleMs) {
+          if (process.env.PB_TXN_TRACE) process.stderr.write(`[lock] BREAK-STALE t=${Date.now()} ${basename(lockPath)} pid=${process.pid}\n`);
+          try { unlinkSync(lockPath); continue; } catch { /* raced */ }
+        }
       } catch { /* lock vanished — retry immediately */ }
-      if (Date.now() - start > timeoutMs) return false;
+      if (Date.now() - start > LOCK_WAIT_MS) return false;
       busySleepMs(20);
     }
   }
 }
-function releaseLock(lockPath) { try { unlinkSync(lockPath); } catch { /* already gone */ } }
+// Retry the unlink (a transient Windows sharing violation here would leave a lock
+// that blocks every later acquire), and only remove a lock this process owns.
+function releaseLock(lockPath) {
+  const mine = lockTokens.get(lockPath);
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      if (mine) {
+        let holder = null;
+        try { holder = JSON.parse(readFileSync(lockPath, 'utf8'))?.token; } catch (err) {
+          if (process.env.PB_TXN_TRACE) process.stderr.write(`[lock] RELEASE-UNREADABLE ${basename(lockPath)} err=${err.code}\n`);
+          return;
+        }
+        if (holder !== mine) {
+          if (process.env.PB_TXN_TRACE) process.stderr.write(`[lock] SKIP-RELEASE ${basename(lockPath)} pid=${process.pid} (not the owner) file=${holder} mine=${mine}\n`);
+          lockTokens.delete(lockPath);
+          return;
+        }
+      }
+      unlinkSync(lockPath);
+      lockTokens.delete(lockPath);
+      if (process.env.PB_TXN_TRACE) process.stderr.write(`[lock] RELEASE t=${Date.now()} ${basename(lockPath)} pid=${process.pid}\n`);
+      return;
+    } catch (e) {
+      if (e?.code === 'ENOENT') { lockTokens.delete(lockPath); return; } // already gone — the goal state
+      if (attempt === 9 && process.env.PB_TXN_TRACE) process.stderr.write(`[lock] RELEASE-FAILED ${basename(lockPath)} err=${e.code}\n`);
+      busySleepMs(20 * (attempt + 1));
+    }
+  }
+}
 
 function backlogTasks() {
   const bl = readData(BACKLOG);
@@ -287,7 +642,7 @@ function backlogTasks() {
 
 function writeBacklog(obj) {
   if (BACKLOG.endsWith('.json')) {
-    writeFileSync(p(BACKLOG), JSON.stringify(obj, null, 2) + '\n', 'utf8');
+    atomicReplace(p(BACKLOG), JSON.stringify(obj, null, 2) + '\n');
     return;
   }
   const header =
@@ -301,25 +656,30 @@ function writeBacklog(obj) {
     return;
   }
   // If the task list is being explicitly reset to empty (e.g. loop new --fresh),
-  // rewrite the file and clear the machine-managed sidecar.
+  // rewrite the file and clear the machine-managed sidecar — transactionally, so a
+  // concurrent reader never sees a half-cleared state object.
   const emptying = Array.isArray(obj.tasks) && obj.tasks.length === 0;
   if (emptying) {
     writeFileSync(p(BACKLOG), header + yaml.dump(obj, { lineWidth: 100 }), 'utf8');
-    writeBacklogState({});
+    withStateTxn((draft) => { for (const k of Object.keys(draft)) delete draft[k]; }, { agent: resolveAgentId({}) });
     return;
   }
-  // Normal status updates go to the sidecar so hand-edited formatting/comments
-  // in backlog.yaml are preserved.
-  const state = readBacklogState();
-  for (const t of obj.tasks || []) {
-    state[t.id] = {
-      status: t.status,
-      loop_id: t.loop_id || undefined,
-      claimed_at: t.claimed_at || undefined,
-      updated_at: t.updated_at || undefined,
-    };
-  }
-  writeBacklogState(state);
+  // Normal status updates go to the sidecar so hand-edited formatting/comments in
+  // backlog.yaml are preserved. One transaction covers every task in the batch, so
+  // a multi-task write is all-or-nothing rather than N racing single writes.
+  withStateTxn((draft, ctx) => {
+    for (const t of obj.tasks || []) {
+      draft[t.id] = {
+        ...(draft[t.id] || {}),
+        status: t.status,
+        loop_id: t.loop_id || undefined,
+        claimed_at: t.claimed_at || undefined,
+        updated_at: t.updated_at || undefined,
+        seq: ctx.seq,
+        updated_by: resolveAgentId({}),
+      };
+    }
+  }, { agent: resolveAgentId({}) });
 }
 function appendBacklogTask(task) {
   if (BACKLOG.endsWith('.json')) {
@@ -579,7 +939,11 @@ function checkPathWarnings(checks) {
   const needle = new RegExp(`(^|[\\s'"\`(])${PLAYBOOK_DIR.replace(/[.]/g, '\\.')}[\\\\/]`);
   return checks.filter((c) => needle.test(c));
 }
-function runChecks(task) {
+// `cwd` defaults to the playbook root — the contract checks were written against.
+// Worker verification passes a worktree instead, so an isolated candidate is
+// judged in ITS OWN tree rather than against the root checkout (which is the whole
+// point of running the work in a worktree).
+function runChecks(task, cwd = ROOT) {
   const checks = taskChecks(task);
   const results = [];
   for (const cmd of checks) {
@@ -587,7 +951,7 @@ function runChecks(task) {
     if (!parts.length) continue;
     const [file, ...argv] = parts;
     try {
-      runCommandSync(file, argv, { cwd: ROOT, stdio: 'pipe', timeout: 120000 });
+      runCommandSync(file, argv, { cwd, stdio: 'pipe', timeout: 120000 });
       results.push({ cmd, ok: true });
     } catch (e) {
       const out = [e.stdout, e.stderr].filter(Boolean).map(String).join('\n').trim();
@@ -602,7 +966,7 @@ function printCheckResults(results) {
     if (!r.ok && r.output) console.log(r.output.split(/\r?\n/).map((l) => `        ${l}`).join('\n'));
   }
 }
-function runCommands(task) {
+function runCommands(task, cwd = ROOT) {
   const cmds = taskCommands(task);
   const results = [];
   for (const cmd of cmds) {
@@ -610,7 +974,7 @@ function runCommands(task) {
     if (!parts.length) continue;
     const [file, ...argv] = parts;
     try {
-      runCommandSync(file, argv, { cwd: ROOT, stdio: 'pipe', timeout: 120000 });
+      runCommandSync(file, argv, { cwd, stdio: 'pipe', timeout: 120000 });
       results.push({ cmd, ok: true });
     } catch (e) {
       const out = [e.stdout, e.stderr].filter(Boolean).map(String).join('\n').trim();
@@ -855,6 +1219,14 @@ function cmdValidate(args) {
     if (args.strict) { console.error('\nFailing (--strict): hollow gates on actionable tasks.'); process.exit(1); }
   }
 
+  // Tracked-state trap: runtime state committed to git gets reverted by merges,
+  // silently destroying records. Warn loudly, and fail under --strict.
+  const trap = trackedStateWarnings();
+  if (trap.length) {
+    console.log(`\n⚠ ${trap.join('\n  ')}`);
+    if (args.strict) { console.error('\nFailing (--strict): pb runtime state is git-tracked.'); process.exit(1); }
+  }
+
   // --mode: also run the active mode's kind:check principles. Opt-in so plain
   // `pb validate` stays structural-only (and non-recursive: a check principle may
   // itself invoke `pb validate`, but never `pb validate --mode`).
@@ -968,6 +1340,42 @@ function mergeReadyPayload(task) {
     reasons.push('checker verdict predates the latest done record — re-review the current work');
   }
 
+  // Branch-level gate. The journal says the task was delivered; the BRANCH says
+  // whether the reviewed work is actually there to merge. A verdict over a branch
+  // that carries no commits (or a worktree that is gone) is a claim about nothing.
+  const worker = state.worker || null;
+  let branchState = null;
+  if (worker && LIVE_WORKER_STATUSES.has(worker.status)) {
+    // Only a LIVE slot is expected to still be on disk. A `removed`/`merged` record
+    // is history: its worktree is gone BY DESIGN, and blocking the gate on that
+    // would make teardown permanently poison the task (the work may already be
+    // merged, and the verdict reviewed the branch, not the directory).
+    branchState = worktreeState(worker);
+    if (!branchState.present) {
+      reasons.push(`worker worktree is missing on disk (${branchState.path}) — the reviewed work cannot be merged from it`);
+    } else {
+      if (branchState.clean === false) {
+        reasons.push(`worker worktree has ${branchState.changed.length} uncommitted change(s) — commit them before merging`);
+      }
+      if (branchState.ahead === 0) {
+        reasons.push('worker branch has no commits ahead of its base — there is no work to merge');
+      }
+      const verified = worker.last_verified_commit || null;
+      if (!verified) {
+        warnings.push('worker has never been verified in its own worktree (`pb worker verify`)');
+      } else if (branchState.head && verified !== branchState.head) {
+        warnings.push(`verification is stale: verified ${verified.slice(0, 8)} but the branch is at ${branchState.head.slice(0, 8)}`);
+      } else if (worker.last_verified_passed === false) {
+        reasons.push('the last in-worktree verification FAILED — re-run `pb worker verify`');
+      }
+    }
+  } else if (worker) {
+    branchState = worktreeState(worker);
+    warnings.push(`worker slot was already torn down (status: ${worker.status}) — merge readiness was judged from the journal and branch record`);
+  } else {
+    warnings.push('no worker worktree recorded — merge readiness was judged from the journal alone');
+  }
+
   if (!checks.length) warnings.push('task has no acceptance_checks — "done" rests on operator honor');
   else if (gateQuality(task) === '⚠hollow') warnings.push('acceptance_checks are structural only (validate) — they do not test the work itself');
   if (state.provider?.status === 'rate_limited') warnings.push(`provider ${state.provider.name} is rate_limited (retry_after=${state.provider.retry_after})`);
@@ -980,7 +1388,8 @@ function mergeReadyPayload(task) {
     checker,
     checks_outcome: done?.checks ?? null,
     gate_quality: gateQuality(task),
-    worker: state.worker || null,
+    worker,
+    branch: branchState,
     reasons,
     warnings,
   };
@@ -1040,23 +1449,122 @@ function runGit(argv) {
     throw err;
   }
 }
+// Same contract, but for calls whose stdout is a MACHINE-READ payload rather than
+// chatter (rev-parse, rev-list, status --porcelain). Returning the trim'd value
+// keeps callers from re-parsing, and a failure returns null instead of throwing so
+// "the worktree is gone" is a reportable state rather than a crash.
+function runGitCapture(argv, cwd = ROOT) {
+  try {
+    return execFileSync('git', argv, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return null;
+  }
+}
+// A live worker record is one that still owns a slot. `removed`/`merged` are
+// historical, not live: teardown makes the slot reusable rather than poisoning it.
+const LIVE_WORKER_STATUSES = new Set(['created', 'active', 'verified']);
+function liveWorkerFor(taskId, state = readBacklogState()) {
+  const rec = state[taskId]?.worker;
+  if (!rec || !LIVE_WORKER_STATUSES.has(rec.status)) return null;
+  return rec;
+}
+function liveWorkerAt(worktreePath) {
+  const state = readBacklogState();
+  for (const [taskId, entry] of Object.entries(state)) {
+    if (taskId.startsWith('__')) continue;
+    const rec = entry?.worker;
+    if (!rec || !LIVE_WORKER_STATUSES.has(rec.status)) continue;
+    if (rec.worktree_path && resolve(rec.worktree_path) === resolve(worktreePath)) return { taskId, rec };
+  }
+  return null;
+}
 function gitBranchExists(branch) {
   try {
     execFileSync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: ROOT, stdio: 'ignore' });
     return true;
   } catch { return false; }
 }
-function workerNames(taskId, agent) {
+function workerNames(taskId, agent, { worktreeOverride, base } = {}) {
   const top = gitToplevel();
   return {
     branch: `agent/${safeSlug(taskId)}-${safeSlug(agent)}`,
-    worktree: resolve(dirname(top), `${basename(top)}-worker-${safeSlug(taskId)}-${safeSlug(agent)}`),
+    worktree: worktreeOverride
+      ? resolve(process.cwd(), worktreeOverride)
+      : resolve(dirname(top), `${basename(top)}-worker-${safeSlug(taskId)}-${safeSlug(agent)}`),
+    base: base || 'HEAD',
   };
 }
-function workerCreatePayload(taskId, agent, execute) {
-  const { branch, worktree } = workerNames(taskId, agent);
-  const command = `git worktree add -b '${commandQuote(branch)}' '${commandQuote(worktree)}' HEAD`;
-  return { schema: 'agent-playbook.worker.v1', action: 'create', task_id: taskId, agent, branch, worktree, command, execute: !!execute };
+// Read-only git query inside a worktree. Returns null instead of throwing, so a
+// missing/removed worktree is a reported state, not a crash.
+function gitIn(cwd, argv) {
+  try {
+    return execFileSync('git', argv, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return null;
+  }
+}
+function worktreeState(worker) {
+  const path = worker?.worktree_path || null;
+  const branch = worker?.branch || null;
+  const base = worker?.base_commit || worker?.base_branch || 'HEAD';
+  const present = !!path && existsSync(path);
+  if (!present) {
+    return { present: false, path, branch, clean: null, ahead: null, behind: null, head: null, changed: [], error: 'worktree is not on disk' };
+  }
+  const head = gitIn(path, ['rev-parse', 'HEAD']);
+  const porcelain = gitIn(path, ['status', '--porcelain']) ?? '';
+  const changed = porcelain ? porcelain.split(/\r?\n/).filter(Boolean) : [];
+  // `git status --porcelain` is empty for a clean tree, but an EMPTY STRING is also
+  // what we get when the command failed — so distinguish "git said nothing" from
+  // "git could not run" using the separately captured head.
+  const usable = head !== null;
+  const ahead = usable && base ? Number(gitIn(path, ['rev-list', '--count', `${base}..HEAD`]) ?? 0) : null;
+  const behind = usable && base ? Number(gitIn(path, ['rev-list', '--count', `HEAD..${base}`]) ?? 0) : null;
+  return {
+    present: true,
+    path,
+    branch,
+    base,
+    clean: usable ? changed.length === 0 : null,
+    ahead: Number.isNaN(ahead) ? null : ahead,
+    behind: Number.isNaN(behind) ? null : behind,
+    head,
+    changed: changed.slice(0, 50),
+    error: usable ? null : 'git could not read this worktree',
+  };
+}
+function workerStatusPayload(taskId, worker) {
+  const derived = worker ? null : workerNames(taskId, resolveAgentId({}));
+  const rec = worker || { agent: resolveAgentId({}), branch: derived.branch, worktree_path: derived.worktree, status: 'absent' };
+  const st = worktreeState(rec);
+  return {
+    schema: 'agent-playbook.worker-status.v1',
+    task_id: taskId,
+    agent: rec.agent || null,
+    worker_status: rec.status || null,
+    branch: st.branch,
+    worktree: st.path,
+    present: st.present,
+    clean: st.clean,
+    ahead: st.ahead,
+    behind: st.behind,
+    head: st.head,
+    base: st.base || null,
+    changed: st.changed,
+    last_verified_commit: rec.last_verified_commit || null,
+    verification_stale: !!(rec.last_verified_commit && st.head && rec.last_verified_commit !== st.head),
+    error: st.error || null,
+  };
+}
+// The worker slot is a per-task, per-agent resource. Serialize acquisition on its
+// own lock so two agents cannot both observe a free slot and both run
+// `git worktree add` (which used to leave an orphan worktree and a stray branch
+// behind, with only the last writer visible in the state).
+const WORKER_LOCK = `${BACKLOG_STATE}.worker.lock`;
+function workerCreatePayload(taskId, agent, execute, opts = {}) {
+  const { branch, worktree, base } = workerNames(taskId, agent, opts);
+  const command = `git worktree add -b '${commandQuote(branch)}' '${commandQuote(worktree)}' ${base}`;
+  return { schema: 'agent-playbook.worker.v1', action: 'create', task_id: taskId, agent, branch, worktree, worktree_path: worktree, base, command, execute: !!execute };
 }
 function workerRemovePayload(taskId, agent, worker, { execute, force, deleteBranch }) {
   // Prefer the recorded worktree — the operator may have created it under a
@@ -1075,12 +1583,27 @@ function cmdWorker(args) {
   const sub = args._[0];
   if (sub === 'create') {
     const taskId = args._[1];
-    if (!taskId) { console.error('Usage: pb worker create <task-id> --agent <agent> [--execute] [--json]'); process.exit(1); }
+    if (!taskId) { console.error('Usage: pb worker create <task-id> --agent <agent> [--base <ref>] [--worktree <path>] [--execute] [--json]'); process.exit(1); }
     const task = backlogTasks().find((t) => t.id === taskId);
     if (!task) { console.error(`Task not found: ${taskId}`); process.exit(1); }
     const agent = args.agent || resolveAgentId(args);
-    const payload = workerCreatePayload(taskId, agent, !!args.execute);
-    if (args.execute) {
+    const opts = { base: typeof args.base === 'string' ? args.base : undefined, worktreeOverride: typeof args.worktree === 'string' ? args.worktree : undefined };
+    const payload = workerCreatePayload(taskId, agent, !!args.execute, opts);
+    if (!args.execute) {
+      if (args.json) return printJson(payload);
+      console.log(`[dry-run] ${payload.command}`);
+      return;
+    }
+    // Slot acquisition is serialized on its own lock: check-then-act outside a lock
+    // let two agents both see a free slot and both run `git worktree add`, leaving
+    // an orphan worktree and branch that no worker record pointed at. This lock is
+    // short-lived, so it gets a short stale window.
+    if (!acquireLock(WORKER_LOCK, { staleMs: WORKER_LOCK_STALE_MS })) {
+      console.error(`Could not acquire the worker slot for [${taskId}] (another agent is opening a worker). Re-run.`);
+      console.error('If no worker create is actually running, clear the leaked lock with: pb unlock');
+      process.exit(1);
+    }
+    try {
       // Refuse before mutating: a half-made worktree is worse than a clean error.
       if (gitBranchExists(payload.branch)) {
         console.error(`Branch already exists: ${payload.branch}`);
@@ -1089,19 +1612,145 @@ function cmdWorker(args) {
       }
       if (existsSync(payload.worktree)) {
         console.error(`Worktree path already exists: ${payload.worktree}`);
-        console.error(`Remove or rename it, then retry.`);
+        console.error('Remove or rename it, then retry.');
         process.exit(1);
       }
+      const baseCommit = gitIn(ROOT, ['rev-parse', args.base && typeof args.base === 'string' ? args.base : 'HEAD']);
+      if (!baseCommit) {
+        console.error(`Could not resolve base ref "${payload.base}" — the worker would fork from nothing.`);
+        process.exit(1);
+      }
+      // ONE live worker per task. The branch name embeds the agent, so two agents
+      // racing for the same task would otherwise both pass the branch/path checks
+      // and both open a slot — the "winner" being merely whoever wrote state last.
+      // Slot identity is the TASK, not the task+agent pair.
+      if (!args.force) {
+        const live = liveWorkerFor(taskId);
+        if (live) {
+          console.error(`[${taskId}] already has a live worker slot held by "${live.agent}" (${live.status}, since ${live.created_at || 'unknown'}).`);
+          console.error(`  Reuse it, tear it down with \`pb worker remove ${taskId} --agent ${live.agent} --execute\`,`);
+          console.error('  or pass --force to open a second slot (two workers editing one task will collide).');
+          process.exit(1);
+        }
+        const clash = liveWorkerAt(payload.worktree);
+        if (clash) {
+          console.error(`Worktree path is already held by [${clash.taskId}] (agent ${clash.rec.agent}): ${payload.worktree}`);
+          console.error(`Pick another path with --worktree, or tear that slot down first.`);
+          process.exit(1);
+        }
+      }
       try {
-        runGit(['worktree', 'add', '-b', payload.branch, payload.worktree, 'HEAD']);
+        // --quiet: `git worktree add` writes "Preparing worktree…" and "HEAD is now
+        // at…" to STDOUT, which corrupted `--json` payloads (the consumer's parse
+        // error, not git's, is what surfaced).
+        runGit(['worktree', 'add', '--quiet', '-b', payload.branch, payload.worktree, payload.base]);
       } catch {
         console.error(`\nFailed to create the worker worktree for [${taskId}] (see git output above). No state was recorded.`);
         process.exit(1);
       }
-      updateBacklogState(taskId, { worker: { agent, branch: payload.branch, worktree_path: payload.worktree, status: 'created', created_at: nowISO() }, updated_at: nowISO() });
+      const branchHead = gitIn(payload.worktree, ['rev-parse', 'HEAD']);
+      updateBacklogState(taskId, () => ({
+        worker: {
+          agent,
+          branch: payload.branch,
+          worktree_path: payload.worktree,
+          base_branch: payload.base,
+          base_commit: baseCommit,
+          head_commit: branchHead || baseCommit,
+          status: 'created',
+          created_at: nowISO(),
+        },
+        updated_at: nowISO(),
+      }), { agent });
+    } finally {
+      releaseLock(WORKER_LOCK);
     }
     if (args.json) return printJson(payload);
-    console.log(payload.execute ? `[exec] ${payload.command}` : `[dry-run] ${payload.command}`);
+    console.log(`[exec] ${payload.command}`);
+    console.log(`Worker slot open: ${payload.worktree} (branch ${payload.branch}, from ${payload.base})`);
+    if (args.json === undefined) console.log(`Run the work there, then: pb worker verify ${taskId} --agent ${agent}`);
+    return;
+  }
+  if (sub === 'status') {
+    const taskId = args._[1];
+    if (!taskId) { console.error('Usage: pb worker status <task-id> [--json]'); process.exit(1); }
+    const task = backlogTasks().find((t) => t.id === taskId);
+    if (!task) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+    const worker = taskState(taskId).worker || null;
+    const payload = workerStatusPayload(taskId, worker);
+    if (args.json) return printJson(payload);
+    if (!worker) { console.log(`[${taskId}] has no worker — no worktree to report.`); return; }
+    console.log(`[${taskId}] worker ${payload.agent} · ${payload.worker_status}`);
+    console.log(`  branch:  ${payload.branch}`);
+    console.log(`  tree:    ${payload.worktree}${payload.present ? '' : '  (MISSING on disk)'}`);
+    console.log(`  base:    ${payload.base}`);
+    console.log(`  head:    ${payload.head || '(unreadable)'}`);
+    console.log(`  changes: ${payload.clean === null ? 'unknown' : payload.clean ? 'clean' : `${payload.changed.length} uncommitted`}`);
+    console.log(`  ahead:   ${payload.ahead === null ? '?' : payload.ahead}  behind: ${payload.behind === null ? '?' : payload.behind}`);
+    if (payload.verification_stale) console.log('  ⚠ verification is stale — the branch moved since the last verify');
+    return;
+  }
+  if (sub === 'exec') {
+    const taskId = args._[1];
+    const argv = Array.isArray(args['--']) ? args['--'] : [];
+    if (!taskId || !argv.length) { console.error('Usage: pb worker exec <task-id> -- <command> [args...]'); process.exit(1); }
+    const worker = taskState(taskId).worker || null;
+    if (!worker?.worktree_path) { console.error(`[${taskId}] has no worker worktree — run \`pb worker create ${taskId} --execute\` first.`); process.exit(1); }
+    if (!existsSync(worker.worktree_path)) { console.error(`The worker worktree is missing on disk: ${worker.worktree_path}`); process.exit(1); }
+    const [file, ...rest] = argv;
+    // Commands run with cwd = the WORKER's tree, so "the work" is exercised in the
+    // isolated checkout that will actually be merged.
+    try {
+      const out = runCommandSync(file, rest, { cwd: worker.worktree_path, stdio: ['ignore', 'pipe', 'inherit'] });
+      if (out?.length) process.stderr.write(out.toString());
+      return;
+    } catch (err) {
+      if (err?.stdout?.length) process.stderr.write(err.stdout.toString());
+      console.error(`\nworker exec failed for [${taskId}] (exit ${err?.status ?? 'unknown'}).`);
+      process.exit(err?.status || 1);
+    }
+  }
+  if (sub === 'verify') {
+    const taskId = args._[1];
+    if (!taskId) { console.error('Usage: pb worker verify <task-id> [--json]'); process.exit(1); }
+    const task = backlogTasks().find((t) => t.id === taskId);
+    if (!task) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+    const worker = taskState(taskId).worker || null;
+    if (!worker?.worktree_path) { console.error(`[${taskId}] has no worker worktree — run \`pb worker create ${taskId} --execute\` first.`); process.exit(1); }
+    if (!existsSync(worker.worktree_path)) { console.error(`The worker worktree is missing on disk: ${worker.worktree_path}`); process.exit(1); }
+    const checks = taskChecks(task);
+    const commands = taskCommands(task);
+    const checkResults = checks.length ? runChecks(task, worker.worktree_path) : [];
+    const commandResults = commands.length ? runCommands(task, worker.worktree_path) : [];
+    const passed = [...checkResults, ...commandResults].every((r) => r.ok);
+    const head = gitIn(worker.worktree_path, ['rev-parse', 'HEAD']);
+    const agent = args.agent || worker.agent || resolveAgentId(args);
+    updateBacklogState(taskId, () => ({
+      worker: {
+        ...worker,
+        head_commit: head || worker.head_commit,
+        last_verified_at: nowISO(),
+        last_verified_commit: head || null,
+        last_verified_passed: passed,
+      },
+      updated_at: nowISO(),
+    }), { agent });
+    const payload = {
+      schema: 'agent-playbook.worker-verify.v1',
+      task_id: taskId,
+      agent,
+      worktree: worker.worktree_path,
+      commit: head,
+      passed,
+      checks: checkResults,
+      commands: commandResults,
+      honor_only: checks.length === 0,
+    };
+    if (args.json) return printJson(payload);
+    if (checks.length || commands.length) printCheckResults([...commandResults, ...checkResults]);
+    if (!checks.length && !commands.length) console.log(`[${taskId}] has no acceptance_checks — verification is honor-only.`);
+    console.log(passed ? `[${taskId}] worker verify PASSED at ${head || '(unknown commit)'}` : `[${taskId}] worker verify FAILED at ${head || '(unknown commit)'}`);
+    if (!passed) process.exit(1);
     return;
   }
   if (sub === 'remove') {
@@ -1122,10 +1771,10 @@ function cmdWorker(args) {
         console.error('Uncommitted work in the worktree? Re-run with --force to discard it.');
         process.exit(1);
       }
-      updateBacklogState(taskId, {
+      updateBacklogState(taskId, () => ({
         worker: { ...(worker || {}), agent, branch: payload.branch, worktree_path: payload.worktree, status: 'removed', removed_at: nowISO() },
         updated_at: nowISO(),
-      });
+      }), { agent });
     }
     if (args.json) return printJson(payload);
     console.log(payload.execute ? `[exec] ${payload.command}` : `[dry-run] ${payload.command}`);
@@ -1140,9 +1789,74 @@ function cmdWorker(args) {
     }
     if (!backlogTasks().some((t) => t.id === taskId)) { console.error(`Task not found: ${taskId}`); process.exit(1); }
     const checker = { verdict, notes: args.notes || null, recorded_at: nowISO(), agent: resolveAgentId(args) };
-    updateBacklogState(taskId, { checker, updated_at: checker.recorded_at });
-    appendJournal({ ts: checker.recorded_at, loop_id: activeLoop()?.id || 'legacy', task: taskId, agent: checker.agent, agent_id: checker.agent, action: 'checker', status: verdict, checks: 'none', result: verdict, files: [], notes: checker.notes });
-    console.log(`Checker [${taskId}] → ${verdict}`);
+    const checkerCommit = commitIteration(
+      taskId,
+      { ts: checker.recorded_at, loop_id: activeLoop()?.id || 'legacy', task: taskId, agent: checker.agent, agent_id: checker.agent, action: 'checker', status: verdict, checks: 'none', result: verdict, files: [], notes: checker.notes },
+      () => ({ checker, updated_at: checker.recorded_at }),
+      { agent: checker.agent },
+    );
+    if (!checkerCommit) process.exit(1);
+    console.log(`Checker [${taskId}] → ${verdict} (seq ${checkerCommit.seq})`);
+    return;
+  }
+  if (sub === 'merge') {
+    const taskId = args._[1];
+    if (!taskId) { console.error('Usage: pb worker merge <task-id> [--agent <agent>] [--execute] [--json]'); process.exit(1); }
+    const task = backlogTasks().find((t) => t.id === taskId);
+    if (!task) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+    const worker = taskState(taskId).worker || null;
+    const agent = args.agent || worker?.agent || resolveAgentId(args);
+    const derived = workerNames(taskId, agent);
+    const branch = worker?.branch || derived.branch;
+    const payload = {
+      schema: 'agent-playbook.worker.v1',
+      action: 'merge',
+      task_id: taskId,
+      agent,
+      branch,
+      command: `git merge --no-ff '${commandQuote(branch)}'`,
+      execute: !!args.execute,
+    };
+    // The merge is gated, never free: an ungated merge is how unfinished work
+    // reaches the trunk. Dry-run reports readiness; --execute refuses outright.
+    const gate = mergeReadyPayload(task);
+    payload.merge_ready = gate.ready;
+    payload.reasons = gate.reasons;
+    payload.warnings = gate.warnings;
+    if (!gate.ready) {
+      if (args.json) printJson(payload);
+      else {
+        console.error(`[${taskId}] NOT merge-ready — refusing to merge "${branch}":`);
+        for (const r of gate.reasons) console.error(`  ! ${r}`);
+        for (const w of gate.warnings) console.error(`  ⚠ ${w}`);
+      }
+      process.exit(1);
+    }
+    if (!args.execute) {
+      if (args.json) printJson(payload);
+      else console.log(`[dry-run] ${payload.command}`);
+      return;
+    }
+    try {
+      // --quiet for the same reason as `worktree add`: git writes its merge summary
+      // to STDOUT, which lands in the middle of a `--json` payload.
+      runGit(['merge', '--quiet', '--no-ff', '-m', `merge ${branch} (pb worker merge ${taskId})`, branch]);
+    } catch {
+      console.error(`\nMerge of "${branch}" failed (see git output above). The checkout may be mid-conflict.`);
+      console.error('Resolve it, or abort with: git merge --abort');
+      process.exit(1);
+    }
+    const head = gitIn(ROOT, ['rev-parse', 'HEAD']);
+    updateBacklogState(taskId, () => ({
+      worker: { ...(worker || {}), agent, branch, merged_at: nowISO(), merged_by: agent, merge_commit: head, status: 'merged' },
+      updated_at: nowISO(),
+    }), { agent });
+    if (args.json) {
+      printJson({ ...payload, merge_commit: head });
+      return;
+    }
+    console.log(`Merged "${branch}" into the root checkout at ${head}.`);
+    console.log(`Tear the slot down with: pb worker remove ${taskId} --agent ${agent} --delete-branch --execute`);
     return;
   }
   if (sub === 'merge-ready') {
@@ -1165,12 +1879,18 @@ function cmdWorker(args) {
     if (!taskId || !args.provider) { console.error('Usage: pb worker provider-rate-limit <task-id> --provider <name> [--retry-after 5h]'); process.exit(1); }
     if (!backlogTasks().some((t) => t.id === taskId)) { console.error(`Task not found: ${taskId}`); process.exit(1); }
     const provider = { name: args.provider, status: 'rate_limited', retry_after: args['retry-after'] || '5h', recorded_at: nowISO() };
-    updateBacklogState(taskId, { provider, updated_at: provider.recorded_at });
-    appendJournal({ ts: provider.recorded_at, loop_id: activeLoop()?.id || 'legacy', task: taskId, agent: resolveAgentId(args), agent_id: resolveAgentId(args), action: 'provider_rate_limit', status: 'blocked', checks: 'none', result: 'rate_limited', files: [], notes: `${provider.name} retry_after=${provider.retry_after}` });
+    const providerAgent = resolveAgentId(args);
+    const providerCommit = commitIteration(
+      taskId,
+      { ts: provider.recorded_at, loop_id: activeLoop()?.id || 'legacy', task: taskId, agent: providerAgent, agent_id: providerAgent, action: 'provider_rate_limit', status: 'blocked', checks: 'none', result: 'rate_limited', files: [], notes: `${provider.name} retry_after=${provider.retry_after}` },
+      () => ({ provider, updated_at: provider.recorded_at }),
+      { agent: providerAgent },
+    );
+    if (!providerCommit) process.exit(1);
     console.log(`Provider ${provider.name} for [${taskId}] rate_limited; retry_after=${provider.retry_after}`);
     return;
   }
-  console.error('Usage: pb worker create|remove|checker|merge-ready|provider-rate-limit ...');
+  console.error('Usage: pb worker create|status|exec|verify|remove|checker|merge-ready|merge|provider-rate-limit ...');
   process.exit(1);
 }
 
@@ -1293,36 +2013,60 @@ function cmdNext(args) {
     // resolve the mode for THIS candidate (it isn't in_progress yet, so resolve directly):
     // task.mode ?? loop.mode ?? default_mode.
     const claimMode = (candidate.mode && String(candidate.mode).trim()) || (loop && loop.mode) || DEFAULT_MODE || undefined;
-    // ATOMIC claim: serialize read-verify-write under an O_EXCL lock so two agents
-    // racing for the same task resolve to exactly one winner. The candidate was
-    // chosen BEFORE the lock; re-verify it is still todo inside the critical section.
-    const lockPath = p(BACKLOG_STATE) + '.lock';
-    if (!acquireLock(lockPath)) {
-      console.error(`\n  Could not acquire the claim lock (another agent is claiming). Re-run \`pb next --claim\`.`);
-      process.exit(1);
-    }
+    // ATOMIC claim: the candidate was chosen BEFORE the lock, so the whole claim —
+    // re-verify it is still todo, stamp the holder, and append the claim row —
+    // happens inside ONE state transaction. The previous version took the state
+    // lock here and then called the (also-locking) state writer, which self-
+    // deadlocked: the inner acquisition burned its whole timeout, the outer write
+    // happened anyway, and the command stalled ~30s while reporting success.
     let claimed = false;
+    const claimToken = newClaimToken();
+    const claimRow = {
+      ts: nowISO(),
+      loop_id: loop.id,
+      task: candidate.id,
+      agent,
+      agent_id: agent,
+      claimed_by: agent,
+      mode: claimMode,
+      action: 'claim',
+      status: 'in_progress',
+      checks: 'none',
+      result: null,
+      files: [],
+      notes: `claimed by ${agent}`,
+    };
     try {
-      const fresh = backlogTasks().find((t) => t.id === candidate.id);
-      if (fresh && fresh.status === 'todo') {
-        updateBacklogState(candidate.id, {
+      withStateTxn((draft, ctx) => {
+        ctx.draft = draft;
+        const fresh = backlogTasks().find((t) => t.id === candidate.id);
+        if (!fresh || fresh.status !== 'todo') return;
+        applyTaskMutation(candidate.id, () => ({
           status: 'in_progress',
-          claimed_at: nowISO(),
-          loop_id: loop ? loop.id : undefined,
+          claimed_at: claimRow.ts,
+          loop_id: loop.id,
           claimed_by: agent,
           agent_id: agent,
+          claim_token: claimToken,
+          claim_token_issued_at: claimRow.ts,
           mode: claimMode,
-        });
+        }), ctx, agent);
+        appendJournal({ ...claimRow, seq: ctx.seq });
         claimed = true;
-      }
-    } finally {
-      releaseLock(lockPath);
+      }, { agent });
+    } catch (e) {
+      if (!(e instanceof StateTxnBusy)) throw e;
+      console.error('\n  Could not acquire the state lock (another agent is writing). Re-run `pb next --claim`.');
+      process.exit(1);
     }
     if (!claimed) {
       console.error(`\n  [${candidate.id}] was claimed by another agent while you were selecting. Re-run \`pb next --claim\` for the next task.`);
       process.exit(1);
     }
     console.log(`\n  Claimed [${candidate.id}] → in_progress  (agent: ${agent}, mode: ${claimMode || 'none'}).`);
+    console.log(`  Claim token: ${claimToken}`);
+    console.log('    Pass it to a sub-agent as PB_CLAIM_TOKEN so it can record on your behalf,');
+    console.log('    or set PB_AGENT_CHAIN=<you>,<sub> for delegation-chain ownership.');
     if (loop) console.log(`  Loop: ${loop.id}`);
     if (blockers.length) console.log(`  WARNING: claimed with --force despite ${blockers.length} guardrail gap(s).`);
     console.log(`  Next: do the work via the skill, then \`pb record --task ${candidate.id} ...\`.`);
@@ -1330,6 +2074,318 @@ function cmdNext(args) {
     console.log(`\n  Run with --claim to mark it in_progress.`);
   }
   console.log('');
+}
+
+// release — give a contested/abandoned task back to the pool. This is the missing
+// half of a claim: without it a crashed or deprioritised holder pins a task as
+// in_progress forever (`--force` on someone else's claim was the only escape).
+// Ownership is enforced the same way as a write: holder, token, or delegation
+// chain. `pb release --stale <minutes>` sweeps claims whose holder went away.
+function cmdRelease(args) {
+  const taskId = args.task || args._[0];
+  const staleMinutes = args.stale ? Number(args.stale) : null;
+  if (!taskId && !staleMinutes) {
+    console.error('Usage: pb release --task <id> [--agent <id>] [--token <claim-token>] [--reason "..."]');
+    console.error('       pb release --stale <minutes> [--dry-run]   # release claims older than N minutes');
+    process.exit(1);
+  }
+  const agent = resolveAgentId(args);
+  const releaseRow = (id, holder, token, reason) => ({
+    ts: nowISO(),
+    loop_id: activeLoop()?.id || 'legacy',
+    task: id,
+    agent,
+    agent_id: agent,
+    claimed_by: holder,
+    action: 'release',
+    status: 'todo',
+    checks: 'none',
+    result: null,
+    files: [],
+    notes: reason || `released by ${agent}`,
+    released_token: token || undefined,
+  });
+
+  if (staleMinutes) {
+    const cutoff = Date.now() - staleMinutes * 60_000;
+    const stale = backlogTasks().filter((t) => t.status === 'in_progress' && (t.claimed_at ? Date.parse(t.claimed_at) < cutoff : true));
+    if (!stale.length) { console.log(`No in_progress claims older than ${staleMinutes} minute(s).`); return; }
+    if (args['dry-run']) {
+      for (const t of stale) console.log(`[dry-run] would release [${t.id}] (held by ${taskHolder(t)} since ${t.claimed_at || 'unknown'})`);
+      return;
+    }
+    let released = 0;
+    for (const t of stale) {
+      const holder = taskHolder(t);
+      const entry = readBacklogState()[t.id] || {};
+      const commit = commitIteration(t.id, releaseRow(t.id, holder, entry.claim_token, `stale claim (>${staleMinutes}m) swept by ${agent}`),
+        () => ({ status: 'todo', __unset: ['claimed_by', 'agent_id', 'claim_token', 'claim_token_issued_at', 'claimed_at'], released_at: nowISO(), released_by: agent }),
+        { agent });
+      if (commit) released++;
+    }
+    console.log(`Released ${released} stale claim(s) (>${staleMinutes} minute(s) old).`);
+    return;
+  }
+
+  const task = backlogTasks().find((t) => t.id === taskId);
+  if (!task) { console.error(`Task not found: ${taskId}`); process.exit(1); }
+  if (task.status !== 'in_progress') {
+    console.log(`[${taskId}] is "${task.status}", not in_progress — nothing to release.`);
+    return;
+  }
+  const ownership = verifyTaskClaim(taskId, args);
+  if (!ownership.ok && !args.force) {
+    console.error(`Refusing to release [${taskId}] — it is held by "${ownership.holder}", and this writer cannot prove ownership.`);
+    console.error('Pass --token <claim-token>, set PB_AGENT_CHAIN, or use --force (recorded on the journal row).');
+    process.exit(1);
+  }
+  const holder = ownership.holder || taskHolder(task);
+  const claimRecord = readBacklogState()[taskId] || {};
+  const commit = commitIteration(taskId, releaseRow(taskId, holder, claimRecord.claim_token, args.notes || (args.force ? `force-released by ${agent}` : undefined)),
+    () => ({ status: 'todo', __unset: ['claimed_by', 'agent_id', 'claim_token', 'claim_token_issued_at', 'claimed_at'], released_at: nowISO(), released_by: agent }),
+    { agent });
+  if (!commit) process.exit(1);
+  console.log(`Released [${taskId}] → todo (was held by ${holder}${ownership.ok ? '' : ', FORCED'}).`);
+}
+
+// unlock — clear a leaked lock. The age-based stale break is deliberately
+// conservative (a lock broken too early loses data), so a holder killed at the
+// wrong moment can leave a lock that outlives its stale window. This is the
+// explicit, human-authorized escape hatch: it reports the holder first and only
+// removes on --force, so it cannot be used to bulldoze an active writer by accident.
+function cmdUnlock(args) {
+  const locks = [
+    { label: 'state', path: p(STATE_LOCK) },
+    { label: 'worker', path: p(WORKER_LOCK) },
+  ];
+  let found = 0;
+  for (const lock of locks) {
+    if (!existsSync(lock.path)) continue;
+    found++;
+    let holder = {};
+    try { holder = JSON.parse(readText(lock.path) || '{}'); } catch { /* unreadable */ }
+    const ageMs = (() => { try { return Date.now() - statSync(lock.path).mtimeMs; } catch { return null; } })();
+    console.log(`[${lock.label} lock] ${lock.path}`);
+    console.log(`  holder: pid=${holder.pid ?? '?'} token=${holder.token ?? '?'} since=${holder.ts ?? '?'} age=${ageMs === null ? '?' : `${Math.round(ageMs / 1000)}s`}`);
+    let holderRunning = null;
+    try { if (typeof holder.pid === 'number') { process.kill(holder.pid, 0); holderRunning = true; } } catch { holderRunning = false; }
+    if (holderRunning) {
+      console.error(`  ⚠ pid ${holder.pid} still appears to be RUNNING — clearing this lock could corrupt a live write.`);
+    }
+    if (args.force) {
+      rmSync(lock.path, { force: true });
+      console.log('  cleared.');
+    } else {
+      console.log('  (dry run — re-run with --force to clear)');
+    }
+  }
+  if (!found) console.log('No locks held.');
+  else if (!args.force) console.log('\nRe-run `pb unlock --force` to clear the locks listed above.');
+}
+
+// --- state repair (crash recovery) -------------------------------------------
+// The journal is the append-only record of what happened, in order; backlog-state.json
+// is a projection of it. That ordering is what makes recovery possible: if a state
+// write was lost (a crash between the append and the state commit, a truncated file,
+// a killed process), the journal still holds the facts and the projection can be
+// rebuilt. Replay rules, in journal order:
+//   claim                → in_progress, holder/loop/mode/token from the row
+//   done | blocked       → terminal status
+//   release              → back to todo with the claim cleared
+//   anything else        → loop-liveness only (progress, checker, provider, …)
+// Fields a journal row cannot carry (the worker record, a checker verdict, a
+// provider cooldown) are PRESERVED from the existing projection rather than dropped —
+// silently deleting state that the journal does not model would be a data loss
+// dressed up as a repair. `--strict` opts into dropping them.
+const TERMINAL_ROW_STATUSES = new Set(['done', 'blocked']);
+const CLAIM_CLEAR_FIELDS = ['claimed_by', 'agent_id', 'claim_token', 'claim_token_issued_at', 'claimed_at'];
+function reconstructStateFromJournal({ strict = false, ids = null } = {}) {
+  const journal = readJournal().filter((e) => !e.__malformed);
+  // Order by the monotonic seq where present; rows without one predate ordering and
+  // keep their file position (a stable sort preserves append order for them).
+  const ordered = journal
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => {
+      const sa = typeof a.e.seq === 'number' ? a.e.seq : null;
+      const sb = typeof b.e.seq === 'number' ? b.e.seq : null;
+      if (sa === null && sb === null) return a.i - b.i;
+      if (sa === null) return -1;
+      if (sb === null) return 1;
+      return sa - sb || a.i - b.i;
+    })
+    .map((x) => x.e);
+
+  const rebuilt = {};
+  let applied = 0;
+  const inScope = ids ? new Set(ids) : null;
+  for (const row of ordered) {
+    const id = row.task;
+    if (!id || id === 'reflect' || typeof id !== 'string') continue;
+    // Scope: the projection describes the CURRENT backlog, so replaying a task that
+    // has since left the backlog would resurrect dead state (an old loop's tasks are
+    // history in the journal, not entries in today's queue).
+    if (inScope && !inScope.has(id)) continue;
+    const entry = rebuilt[id] || (rebuilt[id] = {});
+    const ts = row.ts || null;
+    // loop_id is stamped on every row: the most recent one describes where the task
+    // last belonged, which is what the projection stores.
+    if (row.loop_id && row.loop_id !== 'legacy') entry.loop_id = row.loop_id;
+    if (row.mode) entry.mode = row.mode;
+    if (row.action === 'claim') {
+      entry.status = 'in_progress';
+      entry.claimed_at = ts;
+      entry.claimed_by = row.claimed_by || row.agent || row.agent_id;
+      entry.agent_id = row.agent_id || row.claimed_by || row.agent;
+      if (row.claim_token) entry.claim_token = row.claim_token;
+      if (row.claim_token_issued_at) entry.claim_token_issued_at = row.claim_token_issued_at;
+      entry.updated_at = ts;
+      applied++;
+      continue;
+    }
+    if (row.action === 'release') {
+      entry.status = 'todo';
+      for (const f of CLAIM_CLEAR_FIELDS) delete entry[f];
+      entry.released_at = ts;
+      entry.released_by = row.agent || row.agent_id;
+      entry.updated_at = ts;
+      applied++;
+      continue;
+    }
+    if (TERMINAL_ROW_STATUSES.has(row.status)) {
+      entry.status = row.status;
+      entry.updated_at = ts;
+      applied++;
+      continue;
+    }
+    // Non-terminal activity: it moves the "last touched" clock but not the status.
+    if (ts) entry.updated_at = ts;
+  }
+
+  // `updated_by` is the writer of the winning row for that task.
+  for (const id of Object.keys(rebuilt)) {
+    const winner = ordered.filter((r) => r.task === id && typeof r.seq === 'number')
+      .reduce((a, b) => (!a || b.seq > a.seq ? b : a), null);
+    if (winner) rebuilt[id].updated_by = winner.agent || winner.agent_id;
+  }
+
+  // Preserve projection-only fields the journal does not model.
+  const current = readBacklogState();
+  const preserved = {};
+  if (!strict) {
+    for (const [taskId, cur] of Object.entries(current)) {
+      if (taskId.startsWith('__')) continue;
+      const extra = {};
+      for (const key of ['worker', 'checker', 'provider', 'gate', 'ledger']) {
+        if (cur[key] !== undefined) extra[key] = cur[key];
+      }
+      if (Object.keys(extra).length) {
+        rebuilt[taskId] = { ...extra, ...(rebuilt[taskId] || {}) };
+        preserved[taskId] = Object.keys(extra);
+      }
+    }
+  }
+
+  // Ordering metadata: keep the highest sequence the records can justify, and never
+  // move it backwards past a `seq` that already exists in the projection.
+  const maxRowSeq = ordered.reduce((m, r) => (typeof r.seq === 'number' && r.seq > m ? r.seq : m), 0);
+  const currentSeq = touchSeqOf(current);
+  const next = { ...rebuilt, __seq: Math.max(maxRowSeq, currentSeq) };
+  next.__journal_seq = maxRowSeq || current.__journal_seq;
+  next.__written_at = nowISO();
+  next.__written_by = 'repair-state';
+
+  return { rebuilt, next, applied, preserved, maxRowSeq, currentSeq, journalRows: ordered.length };
+}
+// Compare the projection against what the journal implies. This is the alarm that
+// turns silent divergence (the exact failure mode of a lost update) into a report.
+// Scoped to the CURRENT backlog: a task the journal mentions but the backlog no
+// longer carries is history, not drift.
+function stateDriftReport() {
+  const backlogIds = backlogTasks().map((t) => t.id);
+  const backlogSet = new Set(backlogIds);
+  const { rebuilt, maxRowSeq, currentSeq } = reconstructStateFromJournal({ strict: true, ids: backlogIds });
+  const current = readBacklogState();
+  const drift = [];
+  for (const id of backlogIds) {
+    const want = rebuilt[id];
+    const have = current[id]?.status ?? null;
+    if (!want) {
+      // A backlog task with no journal history at all is normal for a fresh todo.
+      if (have && have !== 'todo') drift.push({ task: id, field: 'status', state: have, journal: null, kind: 'state-only' });
+      continue;
+    }
+    if (have !== (want.status ?? null)) {
+      drift.push({ task: id, field: 'status', state: have, journal: want.status ?? null, kind: 'mismatch' });
+    }
+  }
+  // A journal ahead of the projection means a state write was lost: the records
+  // committed, the projection did not.
+  return {
+    schema: 'agent-playbook.state-drift.v1',
+    drift,
+    state_seq: currentSeq,
+    journal_max_seq: maxRowSeq,
+    lost_state_write: maxRowSeq > currentSeq,
+    backlog_ids: [...backlogSet],
+  };
+}
+// repair-state — check or rebuild the projection from the journal.
+function cmdRepairState(args) {
+  const backlogIds = backlogTasks().map((t) => t.id);
+  const report = stateDriftReport();
+  const { next, rebuilt } = reconstructStateFromJournal({ strict: !!args.strict, ids: backlogIds });
+  const payload = {
+    schema: 'agent-playbook.repair-state.v1',
+    apply: !!args.apply,
+    strict: !!args.strict,
+    state_seq: report.state_seq,
+    journal_max_seq: report.journal_max_seq,
+    lost_state_write: report.lost_state_write,
+    drift: report.drift,
+    tasks_in_backlog: backlogIds.length,
+    tasks_in_journal: Object.keys(rebuilt).length,
+    tasks_in_state: Object.keys(readBacklogState()).filter((k) => !k.startsWith('__')).length,
+  };
+  if (args.check) {
+    if (args.json) printJson(payload);
+    else {
+      console.log(`state seq ${report.state_seq} · journal max seq ${report.journal_max_seq}`);
+      if (report.lost_state_write) console.log('  ⚠ the journal is AHEAD of the projection — a state write was lost.');
+      if (!report.drift.length) console.log('No drift: the projection agrees with the journal.');
+      else {
+        console.log(`Drift in ${report.drift.length} task(s):`);
+        for (const d of report.drift) console.log(`  [${d.task}] ${d.field}: state=${d.state ?? '(absent)'} journal=${d.journal ?? '(absent)'} (${d.kind})`);
+        console.log('\nRun `pb repair-state --apply` to rebuild the projection from the journal.');
+      }
+    }
+    // A check is a gate: drift is a non-zero exit so it can be wired into CI.
+    if (!args.json && (report.drift.length || report.lost_state_write)) process.exit(1);
+    return;
+  }
+  if (!args.apply) {
+    if (args.json) return printJson({ ...payload, dry_run: true });
+    console.log(`Would rebuild ${Object.keys(rebuilt).length} task state(s) from ${report.journal_max_seq} journal record(s).`);
+    if (report.drift.length) {
+      console.log(`Drift to repair: ${report.drift.length} task(s).`);
+      for (const d of report.drift.slice(0, 20)) console.log(`  [${d.task}] ${d.field}: state=${d.state ?? '(absent)'} → journal=${d.journal ?? '(absent)'}`);
+    } else console.log('No drift — a rebuild would be a no-op.');
+    console.log('\nDry run. Re-run with --apply to write the rebuilt projection.');
+    return;
+  }
+  try {
+    withStateTxn((draft) => {
+      for (const key of Object.keys(draft)) delete draft[key];
+      for (const [k, v] of Object.entries(next)) draft[k] = v;
+    }, { agent: 'repair-state' });
+  } catch (e) {
+    console.error(`Could not rebuild the projection: ${e.message}`);
+    process.exit(1);
+  }
+  if (args.json) return printJson({ ...payload, applied: true, tasks_written: Object.keys(rebuilt).length });
+  console.log(`Rebuilt the projection from ${report.journal_max_seq} journal record(s): ${Object.keys(rebuilt).length} task state(s) written.`);
+  if (report.drift.length) {
+    for (const d of report.drift.slice(0, 20)) console.log(`  [${d.task}] ${d.field}: ${d.state ?? '(absent)'} → ${d.journal ?? '(absent)'}`);
+  }
 }
 
 function nextPlanId() {
@@ -1400,7 +2456,8 @@ function cmdPlan(args) {
 // ============================================================================
 function cmdRecord(args) {
   if (!args.task || !args.action || !args.status) {
-    console.error('Usage: pb record --task <id> --action <action> --status <status> [--result <r>] [--files a,b] [--notes "..."] [--agent <name>] [--loop <id>] [--skip-checks] [--require-loop]');
+    console.error('Usage: pb record --task <id> --action <action> --status <status> [--result <r>] [--files a,b] [--notes "..."] [--agent <name>] [--loop <id>] [--at <dir>] [--token <claim-token>] [--skip-checks] [--require-loop]');
+    console.error('  --at <dir>  run the acceptance_checks in that tree (e.g. a worker worktree) instead of the playbook root');
     console.error(`status must be one of: ${ALLOWED_STATUSES.join(', ')}`);
     process.exit(1);
   }
@@ -1422,14 +2479,26 @@ function cmdRecord(args) {
   const loopId = loop?.id || args.loop || 'legacy';
   if (!loop && !args.loop) console.log('WARNING: no active loop; recording with loop_id=legacy.');
   let checksOutcome = 'none';
+  let checkDir = ROOT;
   if (args.status === 'done' && task) {
     const checks = taskChecks(task);
+    // `--at <worktree>`: run the checks against the ISOLATED tree whose results are
+    // being recorded. Recording done from a worker normally happens at the root,
+    // where a worker-only artifact does not exist yet — so the verified-in-worktree
+    // result could not be recorded honestly, and the only ways out were
+    // --skip-checks (which blocks the merge gate by design) or merging first (which
+    // is backwards). The journal stamps the tree the checks actually ran in.
+    checkDir = typeof args.at === 'string' && args.at.trim() ? resolve(process.cwd(), args.at.trim()) : ROOT;
+    if (checkDir !== ROOT && !existsSync(checkDir)) {
+      console.error(`--at ${args.at} does not exist — refusing to record done against a missing tree.`);
+      process.exit(1);
+    }
     if (checks.length && args['skip-checks']) {
       checksOutcome = 'skipped';
       console.log(`WARNING: recording done with ${checks.length} acceptance check(s) SKIPPED. The journal will say so.`);
     } else if (checks.length) {
-      console.log(`Running ${checks.length} acceptance check(s) for [${task.id}] before recording done:`);
-      const results = runChecks(task);
+      console.log(`Running ${checks.length} acceptance check(s) for [${task.id}] before recording done${checkDir === ROOT ? '' : ` in ${checkDir}`}:`);
+      const results = runChecks(task, checkDir);
       printCheckResults(results);
       if (results.some((r) => !r.ok)) {
         console.error(`\nRefusing to record [${task.id}] as done — acceptance checks failed.`);
@@ -1442,6 +2511,15 @@ function cmdRecord(args) {
 
   const agentId = resolveAgentId(args);
   const claimRecord = readBacklogState()[args.task] || {};
+  // Ownership check: a writer should be the claim holder, hold its token, or be
+  // downstream of it in a declared delegation chain. An unproven writer is still
+  // recorded (work is never silently dropped) but the row is flagged, so
+  // "who wrote this and were they entitled to" is answerable after the fact.
+  const ownership = verifyTaskClaim(args.task, args, readBacklogState());
+  if (!ownership.ok) {
+    console.error(`WARNING: [${args.task}] is held by "${ownership.holder}" but this writer (chain: ${ownership.chain.join(' → ') || agentId}) cannot prove it holds it.`);
+    console.error('         Recording anyway, flagged as ownership=unproven. Pass --token <claim-token> or set PB_AGENT_CHAIN if this is a delegated write.');
+  }
   const entry = {
     ts: nowISO(),
     loop_id: loopId,
@@ -1451,26 +2529,30 @@ function cmdRecord(args) {
     agent_id: agentId,
     claimed_by: claimRecord.claimed_by || agentId,
     mode: claimRecord.mode || resolveModeId() || undefined,
+    ownership: ownership.status,
+    agent_chain: ownership.chain || undefined,
     action: args.action,
     status: args.status,
     checks: checksOutcome,
+    check_cwd: checksOutcome === 'passed' ? (checkDir === ROOT ? 'root' : checkDir) : undefined,
     result: args.result || null,
     files: args.files ? String(args.files).split(',').map((s) => s.trim()).filter(Boolean) : [],
     notes: args.notes || null,
   };
-  appendJournal(entry);
-  console.log(`Recorded [${entry.task}] ${entry.action} → ${entry.status}${checksOutcome !== 'none' ? ` (checks: ${checksOutcome})` : ''}`);
-
-  // keep backlog coherent: sync the task's status when the iteration ends it
-  if (task && ['done', 'blocked'].includes(args.status)) {
-    const existing = readBacklogState()[task.id] || {};
-    updateBacklogState(task.id, {
+  // The journal row and the task-state touch commit together, in one order. This
+  // is what makes "who wrote last" answerable and identical across both stores.
+  const endsIteration = !!(task && ['done', 'blocked'].includes(args.status));
+  const commit = commitIteration(args.task, entry, (existing) => {
+    if (!endsIteration) return {};
+    return {
       status: args.status,
       updated_at: entry.ts,
       loop_id: existing.loop_id || (loop ? loop.id : undefined),
-    });
-    console.log(`Backlog [${task.id}] → ${args.status}.`);
-  }
+    };
+  }, { agent: agentId });
+  if (!commit) process.exit(1);
+  console.log(`Recorded [${entry.task}] ${entry.action} → ${entry.status}${checksOutcome !== 'none' ? ` (checks: ${checksOutcome})` : ''} (seq ${commit.seq})`);
+  if (endsIteration) console.log(`Backlog [${task.id}] → ${args.status}.`);
 }
 
 // ============================================================================
@@ -1507,6 +2589,9 @@ function closeGateErrors(loop, args = {}) {
 
   const cyc = readCycle();
   if (!cyc.exists || !cyc.stop) errors.push(`No cycle stop condition found in ${CYCLE}.`);
+  // Tracked-state trap (defense in depth): closing a loop whose journal is git-tracked
+  // risks those records being reverted by the next merge.
+  for (const w of trackedStateWarnings()) errors.push(w);
   return errors;
 }
 function writeLoopReport(loop, status, notes = '') {
@@ -1614,7 +2699,7 @@ function cmdLoopRunAuto(args) {
     }
     if (candidate.manual) {
       if (defer) {
-        recordAuto(loop, candidate, 'blocked', 'none', 'Deferred: marked manual, requires human approval.');
+        recordAuto(loop, candidate, 'blocked', 'none', 'Deferred: marked manual, requires human approval.', { agent: autoAgent, claimToken: autoToken });
         console.log(`[${candidate.id}] → blocked (manual, deferred)`);
         deferred++;
         continue;
@@ -1627,7 +2712,7 @@ function cmdLoopRunAuto(args) {
     const checks = taskChecks(candidate);
     if (!cmds.length && !checks.length) {
       if (defer) {
-        recordAuto(loop, candidate, 'blocked', 'none', 'Deferred: no executable commands or checks (honor-only).');
+        recordAuto(loop, candidate, 'blocked', 'none', 'Deferred: no executable commands or checks (honor-only).', { agent: autoAgent, claimToken: autoToken });
         console.log(`[${candidate.id}] → blocked (honor-only, deferred)`);
         deferred++;
         continue;
@@ -1641,8 +2726,22 @@ function cmdLoopRunAuto(args) {
       console.log(`[DRY RUN] would run ${cmds.length} command(s) and ${checks.length} check(s).`);
       break;
     }
-    updateBacklogState(candidate.id, { status: 'in_progress', claimed_at: nowISO(), loop_id: loop.id });
-    console.log(`Claimed [${candidate.id}] ${candidate.title}`);
+    // The auto runner is an agent like any other, so it takes the task the same way:
+    // it mints a claim token at claim time and presents it on every write. That keeps
+    // its rows attributable and proven rather than flagged `ownership: unproven`.
+    const autoAgent = resolveAgentId(args);
+    const autoToken = newClaimToken();
+    updateBacklogState(candidate.id, () => ({
+      status: 'in_progress',
+      claimed_at: nowISO(),
+      loop_id: loop.id,
+      claimed_by: autoAgent,
+      agent_id: autoAgent,
+      claim_token: autoToken,
+      claim_token_issued_at: nowISO(),
+      mode: candidate.mode || loop.mode || DEFAULT_MODE || undefined,
+    }), { agent: autoAgent });
+    console.log(`Claimed [${candidate.id}] ${candidate.title} (agent: ${autoAgent})`);
     let cmdResults = [];
     if (cmds.length) {
       console.log(`Running ${cmds.length} command(s):`);
@@ -1651,7 +2750,7 @@ function cmdLoopRunAuto(args) {
     }
     if (cmdResults.some((r) => !r.ok)) {
       const failed = cmdResults.find((r) => !r.ok);
-      recordAuto(loop, candidate, 'blocked', 'none', `Auto-run command failed: ${failed.cmd}`);
+      recordAuto(loop, candidate, 'blocked', 'none', `Auto-run command failed: ${failed.cmd}`, { agent: autoAgent, claimToken: autoToken });
       console.error(`[${candidate.id}] → blocked (command failed)`);
       if (defer) { deferred++; continue; }
       finalStatus = 'blocked';
@@ -1666,11 +2765,11 @@ function cmdLoopRunAuto(args) {
       printCheckResults(checkResults);
     }
     if (passed) {
-      recordAuto(loop, candidate, 'done', checks.length ? 'passed' : 'none', 'Auto-executed and verified.');
+      recordAuto(loop, candidate, 'done', checks.length ? 'passed' : 'none', 'Auto-executed and verified.', { agent: autoAgent, claimToken: autoToken });
       console.log(`[${candidate.id}] → done`);
       tasksCompleted++;
     } else {
-      recordAuto(loop, candidate, 'blocked', 'failed', `Auto-run acceptance checks failed after ${retry} retries.`);
+      recordAuto(loop, candidate, 'blocked', 'failed', `Auto-run acceptance checks failed after ${retry} retries.`, { agent: autoAgent, claimToken: autoToken });
       console.error(`[${candidate.id}] → blocked (checks failed)`);
       if (defer) { deferred++; continue; }
       finalStatus = 'blocked';
@@ -2026,6 +3125,20 @@ function cmdReport(args) {
 // ============================================================================
 //  list — print the indices
 // ============================================================================
+// The mode catalog as data (for `pb list modes --json` consumers: UIs and hosts).
+function listModesPayload() {
+  const cat = readData('modes/index.yaml');
+  const entries = Array.isArray(cat?.modes) ? cat.modes : [];
+  return {
+    schema: 'agent-playbook.modes.v1',
+    default_mode: DEFAULT_MODE || null,
+    modes: entries.map((m) => ({
+      id: m.id,
+      default: m.id === DEFAULT_MODE,
+      abstract: String(m.abstract || m.description || '').replace(/\s+/g, ' ').trim() || null,
+    })),
+  };
+}
 function listModes() {
   const cat = readData('modes/index.yaml');
   const entries = Array.isArray(cat?.modes) ? cat.modes : [];
@@ -2044,8 +3157,30 @@ function listModes() {
 
 function cmdList(args) {
   const which = args._[0];
-  if (which === 'modes') { listModes(); return; }
+  if (which === 'modes') {
+    if (args.json) return printJson(listModesPayload());
+    listModes();
+    return;
+  }
   const mode = resolveModeId();
+  // `--json` exists so a host runtime (the DSH plugin's skill provider) consumes the
+  // resolved catalog as data instead of parsing this human table. It is the same
+  // resolution the CLI uses, so one implementation serves both.
+  if (args.json) {
+    const payload = {
+      schema: 'agent-playbook.list.v1',
+      mode: mode || null,
+      skills: resolvedSkillEntries().map((x) => ({
+        id: x.id, file: x.file, process: x.process || null, owner: x.owner || null,
+      })),
+      processes: resolvedProcessEntries().map((x) => ({
+        id: x.id, file: x.file, owner: x.owner || null,
+      })),
+    };
+    if (which === 'skills') delete payload.processes;
+    else if (which === 'processes') delete payload.skills;
+    return printJson(payload);
+  }
   if (!which || which === 'processes') {
     console.log(`\nProcesses (mode: ${mode || 'none'}):`);
     for (const x of resolvedProcessEntries()) console.log(`  ${String(x.id).padEnd(18)} ${x.file}${x.owner ? `  (${x.owner})` : ''}`);
@@ -2511,6 +3646,18 @@ function cmdCheckpoint(args) {
     const recorded = journal.some((e) => e.task === t.id && (!t.claimed_at || (e.ts || '') >= t.claimed_at));
     if (!recorded) warnings.push(`[${t.id}] claimed but no progress recorded — \`pb record --task ${t.id} ...\` or release it.`);
   }
+  // projection drift: the journal is the record, backlog-state.json is a view of it.
+  // A disagreement means a write was lost silently — the exact failure this project
+  // exists to refuse — so the heartbeat must say so, not wait to be asked.
+  try {
+    const drift = stateDriftReport();
+    if (drift.drift.length) {
+      warnings.push(`state projection disagrees with the journal in ${drift.drift.length} task(s) — run \`pb repair-state --check\`.`);
+    }
+    if (drift.lost_state_write) {
+      warnings.push(`the journal (seq ${drift.journal_max_seq}) is AHEAD of the projection (seq ${drift.state_seq}) — a state write was lost; run \`pb repair-state --check\`.`);
+    }
+  } catch { /* a broken projection must not break the heartbeat itself */ }
   // phase-loop drift: forward brief (cycle) + backward reflect
   const reflectTs = lastReflectTs(journal);
   const hasClaimableWork = wip.length > 0 || Boolean(nextTodo);
@@ -2907,13 +4054,29 @@ function cmdHelp() {
     task show <id> [--json] Machine-readable task details and acceptance checks
     runcard list|show <id> [--json]
                            Portable RunCard projection for UI/runtime integrations
-    worker create|remove|checker|merge-ready|provider-rate-limit ...
-                           Worker worktrees (dry-run; --execute to apply), checker verdict,
-                           merge gate (exit 1 when not ready), provider cooldown
+    worker create|status|exec|verify|merge|remove|checker|merge-ready|provider-rate-limit ...
+                           Worker worktrees (dry-run; --execute to apply). create opens an
+                           isolated slot (atomic: one winner per slot); status reports
+                           ahead/behind/uncommitted; exec runs a command IN the worktree;
+                           verify runs the task's checks IN the worktree; merge is gated by
+                           merge-ready; remove tears the slot down. checker records an
+                           independent verdict, merge-ready is the exit-1 gate, and
+                           provider-rate-limit records a real provider 403/429 cooldown.
     next [--claim] [--force]
                            Select the next task; --claim marks it in_progress. Claiming is
                            refused if there's no active loop or the cycle brief is missing/stale
-                           (--force overrides, not recommended)
+                           (--force overrides, not recommended). A claim mints a CLAIM TOKEN.
+    release --task <id> [--token <t>] | --stale <minutes>
+                           Give a claim back to the pool (holder, token, or delegation chain
+                           must authorize it). --stale sweeps abandoned claims.
+    unlock [--force]       Report and (with --force) clear a leaked state/worker lock. A lock
+                           is only auto-broken by age, so a killed holder can outlive its
+                           window; this is the explicit escape hatch.
+    repair-state [--check] [--apply] [--strict] [--json]
+                           Rebuild backlog-state.json from the append-only journal (the
+                           projection is derived data). --check exits 1 on drift so it can
+                           gate CI; --apply writes; --strict drops projection-only fields
+                           (worker/checker/provider) instead of preserving them.
     record --task <id> --action <a> --status <s> [--result <r>] [--files a,b] [--notes "..."] [--agent <n>] [--skip-checks]
                            Append a journal entry. Recording done RUNS the task's
                            acceptance_checks and refuses if they fail.
@@ -2963,11 +4126,122 @@ function cmdHelp() {
 `);
 }
 
-const [, , cmd, ...rest] = process.argv;
-const args = parseArgs(rest);
-switch (cmd) {
+// ============================================================================
+//  Importable API (for harness plugins and other in-process consumers)
+// ----------------------------------------------------------------------------
+// The CLI below is the primary surface; this is the same engine exposed as data
+// for a host runtime (e.g. the DeepSeek Harness plugin) so a consumer reads the
+// canonical JSON projections instead of scraping human text.
+//
+// READ paths are exported because they are pure reads of the same files the CLI
+// reads — one implementation, no second source of truth. MUTATIONS are NOT
+// exported in-process on purpose: every `cmd*` calls `process.exit()` on refusal
+// (that is how the CLI reports a gate), and an in-process caller would have the
+// HOST killed instead of getting an error. Mutations therefore go through the CLI
+// as a subprocess, where exit codes are the contract and `pb record --status done`
+// still enforces acceptance_checks.
+//
+// Importing this module is side-effect free apart from reading the master: the CLI
+// dispatch is guarded so `import` does not run a command.
+const api = {
+  schema: 'agent-playbook.api.v1',
+  root: ROOT,
+  masterPath: p(MASTER),
+  version: master?.version || null,
+  name: master?.name || null,
+  allowedStatuses: ALLOWED_STATUSES,
+  // orientation
+  status: () => statusPayload(),
+  stateDrift: () => stateDriftReport(),
+  // backlog + tasks
+  tasks: () => backlogTasks(),
+  task: (id) => taskPayload(id),
+  runcard: (id) => { const t = backlogTasks().find((x) => x.id === id); return t ? runCardForTask(t) : null; },
+  nextClaimable: () => cmdNextPayload(),
+  // records
+  journal: (limit = null) => {
+    const rows = readJournal();
+    return limit ? rows.slice(-limit) : rows;
+  },
+  loops: () => readLoops(),
+  activeLoop: () => activeLoop(),
+  lessons: () => openLessons(),
+  // guardrails
+  validate: () => runValidate(),
+  // resolved skill/process/mode catalogs (the same resolution the CLI uses)
+  catalogs: () => ({
+    schema: 'agent-playbook.list.v1',
+    mode: resolveModeId() || null,
+    skills: resolvedSkillEntries().map((x) => ({ id: x.id, file: x.file, process: x.process || null, owner: x.owner || null })),
+    processes: resolvedProcessEntries().map((x) => ({ id: x.id, file: x.file, owner: x.owner || null })),
+  }),
+  modes: () => listModesPayload(),
+  // worktrees (read-only view)
+  workerStatus: (id) => {
+    const t = backlogTasks().find((x) => x.id === id);
+    if (!t) return null;
+    return workerStatusPayload(id, taskState(id).worker || null);
+  },
+  mergeReady: (id) => {
+    const t = backlogTasks().find((x) => x.id === id);
+    return t ? mergeReadyPayload(t) : null;
+  },
+  // helpers a host needs to talk to the CLI correctly
+  claimOwnership: (taskId, extra = {}) => verifyTaskClaim(taskId, extra),
+};
+
+// The next claimable task WITHOUT claiming it (the claim itself is a mutation, so it
+// goes through the CLI). Mirrors cmdNext's selection rules so a host can preview the
+// same choice the CLI would make.
+function cmdNextPayload() {
+  const tasks = backlogTasks();
+  const todo = tasks.filter((t) => t.status === 'todo');
+  const claimable = todo.filter((t) => unmetDeps(t, tasks).length === 0);
+  const candidate = claimable.sort((a, b) => prio(a) - prio(b))[0] || null;
+  if (!candidate) return { task: null, reason: todo.length ? 'blocked or mode-filtered' : 'empty' };
+  const sk = candidate.skill ? skillForMode(candidate.skill, candidate.mode) : null;
+  return {
+    task: candidate,
+    skill: candidate.skill || null,
+    skill_file: sk?.file || null,
+    process: sk?.process || null,
+    acceptance_checks: taskChecks(candidate),
+    gate_quality: gateQuality(candidate),
+    holder: taskHolder(candidate),
+  };
+}
+
+export { api };
+// `pb` values are also exported for hosts that want the resolved paths.
+export const paths = {
+  root: ROOT,
+  backlog: p(BACKLOG),
+  backlogState: p(BACKLOG_STATE),
+  journal: p(JOURNAL),
+  loops: p(LOOPS),
+  lessons: p(LESSONS),
+  cycle: p(CYCLE),
+  reports: p(REPORTS_DIR),
+};
+
+// Only run the CLI when this file IS the entry point. Importing it (for the API
+// above) must not execute a command.
+const isMainModule = (() => {
+  try {
+    return !!process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+})();
+if (isMainModule) {
+  const [, , cmd, ...rest] = process.argv;
+  const args = parseArgs(rest);
+  switch (cmd) {
   case 'status': cmdStatus(args); break;
   case 'next': cmdNext(args); break;
+  case 'release': cmdRelease(args); break;
+  case 'unlock': cmdUnlock(args); break;
+  case 'repair-state': cmdRepairState(args); break;
   case 'task': cmdTask(args); break;
   case 'runcard': cmdRunCard(args); break;
   case 'worker': cmdWorker(args); break;
@@ -3005,4 +4279,5 @@ switch (cmd) {
     console.error(`Unknown command: ${cmd}\n`);
     cmdHelp();
     process.exit(1);
+  }
 }

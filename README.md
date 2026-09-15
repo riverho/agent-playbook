@@ -1,6 +1,6 @@
 # Agent-Playbook
 
-Current engine release: **v0.3.6**.
+Current engine release: **v0.5.0**.
 
 > **Done is an exit code, not prose.** The kernel is a `pb record --status done` that re-runs each
 > task's `acceptance_checks` (shell commands) and *refuses* on failure. Anchoring, the North Star
@@ -165,6 +165,71 @@ node <engine>/scripts/pb.mjs scaffold --target <repo>/.agents-playbook
 Copy-don't-clobber: existing files are never overwritten (except `pb.mjs` itself, which is the
 engine). Then `npm install` and `node scripts/pb.mjs bootstrap`. The CLI resolves paths relative
 to its own folder, so it travels intact. Full lifecycle in `INSTALL.md`.
+
+## Multi-agent: claims are leases, writes are attributable
+
+N agents can share one backlog. A claim mints a **token**, and a writer proves entitlement three
+ways: it IS the holder; it presents the token (`--token` / `PB_CLAIM_TOKEN`); or the holder appears
+in its declared delegation chain (`PB_AGENT_CHAIN=root,sub,grand`).
+
+A sub-agent therefore records **as itself** — `agent` + `agent_chain` + `ownership: token|chain` on
+the journal row — rather than impersonating its parent, so fan-out stays auditable back to the task
+that delegated it. An unproven write is recorded and flagged `ownership: unproven`: losing real work
+is worse than an unproven row.
+
+Every shared-state write goes through one serialized transaction (O_EXCL lock + atomic replace) and
+each journal row carries a monotonic `seq`, so "who wrote first, who wrote last, and on whose behalf"
+is a recorded fact instead of an inference from colliding timestamps. `pb release` returns a claim
+to the pool; `pb unlock` clears a leaked lock.
+
+## Worktrees: isolated work, gated merges
+
+```bash
+pb worker create <task> --agent <a> --execute   # one live slot per task (atomic)
+pb worker status <task> --json                  # ahead / behind / uncommitted / head
+pb worker exec   <task> -- <cmd>                # run a command INSIDE the worktree
+pb worker verify <task>                         # run the task's checks INSIDE the worktree
+pb worker merge  <task> --execute               # gated by merge-ready; refuses unfinished work
+pb worker remove <task> --delete-branch --execute
+pb record --task <task> --status done --at <worktree>   # record checks that ran in the worker tree
+```
+
+The merge gate reads the branch, not just the journal: a worktree that is missing, dirty, or has
+**zero commits ahead of its base** cannot be merged, and a verification that has gone stale is
+reported rather than trusted.
+
+## Crash recovery
+
+`memory/journal.ndjson` is the append-only record; `memory/backlog-state.json` is a projection of it.
+If a state write is lost, the projection is rebuildable:
+
+```bash
+pb repair-state --check     # exit 1 on drift (CI-wireable)
+pb repair-state --apply     # rebuild from the journal
+```
+
+`pb checkpoint` reports drift and a journal-ahead-of-projection gap as warnings, so silent divergence
+surfaces at the heartbeat instead of being discovered later.
+
+## DeepSeek Harness plugin
+
+`dsh-plugin/` is a first-party-style harness plugin, published as
+[`@riverho/dsh-agent-playbook`](https://www.npmjs.com/package/@riverho/dsh-agent-playbook). It
+exposes one `playbook` tool (status / anchor / next / claim / task / check / record / worker / init /
+unlock / repair), registers the playbook's own skills as harness skills (`playbook-<id>`), and stages
+the constitution — North Star, active loop, task in hand and **its checks** — on the agent's inbox
+before each step, so compaction cannot lose the plot. It bundles the engine, so installation is one
+step and cannot drift from the engine it was tested against.
+
+Two rules define the boundary, and they are the whole design:
+
+- **It never re-implements a gate.** Every action is a `pb` invocation. A second opinion about "done"
+  is exactly what this project refuses.
+- **It shells out rather than importing.** Every `pb` command reports refusal with `process.exit()`,
+  so an in-process call would terminate the *host* instead of returning an error. As a subprocess the
+  exit code stays the contract.
+
+See [`dsh-plugin/README.md`](dsh-plugin/README.md).
 
 ## Guardrails
 

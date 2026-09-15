@@ -1,0 +1,24 @@
+# The bundle patch for @riverho/dsh-agent-playbook.
+#
+# Added to a profile's bundle list, this row mounts the plugin. `config` is patched
+# whole (not merged), so a deployment that wants different behaviour restates the
+# complete config in its own profile patch.
+#
+# The plugin needs no engine install to LOAD: it discovers a playbook by walking up
+# from the session workspace for playbook.yaml / playbook.json, and stays dormant if
+# there is none. That keeps it harmless in workspaces that do not use a playbook.
+- insert:
+    - id: agent-playbook
+      name: '@riverho/dsh-agent-playbook'
+      config:
+        # Empty → discover from the session workspace. Set an absolute path to pin
+        # one playbook regardless of where the session was opened.
+        playbookPath: ''
+        # Stage the constitution (North Star, active loop, task in hand, its
+        # acceptance checks) on the agent's inbox before each step, so compaction and
+        # long sessions cannot lose the plot.
+        injectContext: true
+        # Stay silent when the backlog has nothing todo or in progress.
+        quietWhenIdle: true
+        maxContextChars: 4000
+        commandTimeoutMs: 120000

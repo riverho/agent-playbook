@@ -24,7 +24,7 @@ Repeat this until the backlog is clear:
 | Step | What | Command |
 | --- | --- | --- |
 | 1. Orient | Re-anchor + snapshot state | `node scripts/pb.mjs status` |
-| 2. Select | Pick + claim the next task | `node scripts/pb.mjs next --claim` — refuses if there's no active loop or the cycle brief is missing/stale; `--force` overrides |
+| 2. Select | Pick + claim the next task | `node scripts/pb.mjs next --claim` — refuses if there's no active loop or the cycle brief is missing/stale; `--force` overrides. **Mints a claim token** — keep it. |
 | 3. Act | Follow the skill → process | open `skills/<skill>/SKILL.md`, then `processes/<process>.yaml` |
 | 4. Verify | Structure + the task's checks | `node scripts/pb.mjs validate` then `validate --task <id>` |
 | 5. Record | Log the outcome (enforced) | `node scripts/pb.mjs record --task <id> --action <a> --status <done\|blocked> --notes "..."` |
@@ -49,6 +49,65 @@ A task's `acceptance_checks` are **shell commands** (cwd = playbook root, exit 0
   and flagged in reports. Don't use it to fake green.
 - A task without checks is verified on your honor only. When you write a task, give it
   executable checks whenever possible — exit codes, not prose.
+
+## Working with other agents
+
+One backlog is shared. `pb next --claim` gives you a task **and a claim token** — that token is
+your proof that you are entitled to write the result. Three ways to be entitled:
+
+| You are | How you prove it |
+| --- | --- |
+| the holder | you are the agent that claimed it |
+| acting for the holder | pass `--token <claim-token>` (or set `PB_CLAIM_TOKEN`) |
+| a descendant of the holder | declare `PB_AGENT_CHAIN=root,sub,grand` |
+
+**A sub-agent writes as ITSELF**, with `ownership: token|chain` on its journal row — never as its
+parent. That is what keeps fan-out auditable back to the task that delegated it. A write you cannot
+prove entitlement for is **recorded and flagged `ownership: unproven`**: losing real work is worse
+than an unproven row, so it is never silently dropped and never silently allowed.
+
+```bash
+# delegate: hand the token to a sub-agent so it can record on your behalf
+PB_AGENT_ID=sub-1 PB_PARENT_AGENT_ID=you PB_CLAIM_TOKEN=<token> node scripts/pb.mjs record ...
+```
+
+- `pb release --task <id>` returns a claim to the pool; `--stale <minutes>` sweeps abandoned ones.
+- Every shared-state write is serialized (a lock plus an atomic replace), and each journal row
+  carries a monotonic `seq`, so "who wrote first, who wrote last, on whose behalf" is a **recorded
+  fact**, not an inference from colliding timestamps.
+- `pb unlock [--force]` clears a leaked lock. Locks are only auto-broken by age, never by a
+  liveness probe — a lock held too long costs latency, a lock broken too early costs data.
+
+## Isolated work in a worktree
+
+When the work should not touch the root checkout — long refactors, risky edits, or several agents
+at once — give the task a git worktree:
+
+```bash
+pb worker create <task> --agent <a> --execute   # one live slot per task (atomic: one winner)
+pb worker status <task> --json                  # ahead / behind / uncommitted / head
+pb worker exec   <task> -- <cmd>                # run a command INSIDE the worktree
+pb worker verify <task>                         # run the task's checks INSIDE the worktree
+pb record --task <task> --status done --at <worktree>   # record a done whose checks ran there
+pb worker merge  <task> --execute               # gated by merge-ready; refuses unfinished work
+pb worker remove <task> --delete-branch --execute
+```
+
+The merge gate reads the **branch**, not just the journal: a worktree that is missing, dirty, or
+has **zero commits ahead of its base** cannot be merged, and a verification that has gone stale is
+reported rather than trusted. Record the outcome with `--at <worktree>` so the checks that certify
+the work are the ones that ran on the isolated branch.
+
+## State recovery
+
+`memory/journal.ndjson` is the append-only record; `memory/backlog-state.json` is a **projection**
+of it. If a write is lost, rebuild the view instead of guessing:
+
+```bash
+pb repair-state --check    # exit 1 on drift (CI-wireable)
+pb repair-state --apply    # rebuild from the journal
+pb checkpoint              # heartbeat: reports drift and a lost write as warnings
+```
 
 ## Skills-first routing
 
@@ -93,6 +152,23 @@ source; the report is the artifact. Keep doing the work in the loop and the repo
 - **New durable fact** → add a numbered rule to `memory/project-memory.md`.
 - Run `pb validate` after any change.
 
+
+## Running inside the DeepSeek Harness
+
+`dsh-plugin/` carries the harness integration (`@riverho/dsh-agent-playbook`). It bundles its own
+engine, so a deployment installs the plugin and scaffolds a playbook from it — no second install and
+no version to keep in step:
+
+```
+playbook action=init        # scaffold + hydrate .agents-playbook/ from the bundled engine
+playbook action=status      # orient
+playbook action=claim       # take the next task (returns the claim token)
+playbook action=worker      # worktree lifecycle (create/status/exec/verify/merge/remove)
+```
+
+The `playbook` tool drives exactly the commands on this page; it never re-implements a gate, and it
+stamps your agent identity (`PB_AGENT_ID`, `PB_SESSION_ID`, `PB_AGENT_CHAIN`) so multi-agent writes
+stay attributable. The playbook's own skills are exposed to the harness as `playbook-<id>`.
 
 ## The phase loop (cycle → reflect)
 

@@ -1,6 +1,8 @@
 {
   "version": 1,
-  "url": "http://127.0.0.1:56333",
-  "token": "67311-1783423472313030000",
-  "pid": 67311
+  "url": "http://127.0.0.1:12030",
+  "token": "11460-1788927045425722600",
+  "pid": 11460,
+  "mcp_url": "http://127.0.0.1:12029/mcp",
+  "mcp_token": "wt19-inbound-0ce225e8ff46d8a18126effb997be15377c4e420f666dea1dea9aba7fa1dcbd3"
 }
