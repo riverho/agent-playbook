@@ -118,7 +118,7 @@ function build() {
     version: enginePkg.version,
     private: true,
     type: 'module',
-    description: 'Agent-Playbook engine bundled with @riverho/dsh-agent-playbook.',
+    description: 'Agent-Playbook engine bundled with dsh-agent-playbook.',
     dependencies: { 'js-yaml': '^4.1.0' },
     engines: { node: '>=18' },
   }, null, 2) + '\n', 'utf8');

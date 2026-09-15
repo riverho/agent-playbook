@@ -15,7 +15,7 @@
 
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 let pass = 0;
@@ -26,6 +26,7 @@ function ok(name, cond, extra = '') {
 }
 
 const PLUGIN = resolve('dsh-plugin');
+const pluginPkg = JSON.parse(readFileSync(join(PLUGIN, 'package.json'), 'utf8'));
 if (!existsSync(join(PLUGIN, 'engine', 'scripts', 'pb.mjs'))) {
   console.log('  SKIP  plugin bundle not built — run `npm run build:plugin` first');
   console.log('\ntest-dsh-plugin-published: skipped (0 pass, 0 fail)');
@@ -48,7 +49,7 @@ let tarball = null;
 }
 
 // --- 2. extract it exactly as an install would -------------------------------
-const installed = join(work, 'node_modules', '@riverho', 'dsh-agent-playbook');
+const installed = join(work, 'node_modules', pluginPkg.name);
 {
   mkdirSync(installed, { recursive: true });
   const r = spawnSync('tar', ['-xzf', tarball, '-C', installed, '--strip-components=1'], { encoding: 'utf8' });
@@ -73,8 +74,8 @@ const installed = join(work, 'node_modules', '@riverho', 'dsh-agent-playbook');
   // own location, which is exactly how the engine it copies into the workspace
   // later finds it too.
   const hostRoot = mkdtempSync(join(tmpdir(), 'pbpubhost-'));
-  const hostPlugin = join(hostRoot, 'node_modules', '@riverho', 'dsh-agent-playbook');
-  mkdirSync(join(hostRoot, 'node_modules', '@riverho'), { recursive: true });
+  const hostPlugin = join(hostRoot, 'node_modules', pluginPkg.name);
+  mkdirSync(dirname(hostPlugin), { recursive: true });
   cpSync(installed, hostPlugin, { recursive: true });
   cpSync(resolve('node_modules', 'js-yaml'), join(hostRoot, 'node_modules', 'js-yaml'), { recursive: true });
   // The plugin is installed INTO the project it operates on (and, while developing the

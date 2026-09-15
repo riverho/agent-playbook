@@ -10,7 +10,7 @@
 // there, exactly as the loader's import would.
 //
 // It also pins the shim convention the plugin's engine copy depends on:
-//   <project>/node_modules/@riverho/dsh-agent-playbook/engine/scripts/pb.mjs
+//   <project>/node_modules/dsh-agent-playbook/engine/scripts/pb.mjs
 // resolves `js-yaml` by walking up to <project>/node_modules — which is why the engine the
 // plugin scaffolds into a workspace can run at all, and why the plugin declares js-yaml.
 //
@@ -21,7 +21,7 @@
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 let pass = 0;
@@ -56,9 +56,11 @@ writeFileSync(join(profile, 'package.json'), JSON.stringify({
   dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', pluginPkg.name], patchReload: 'live' } },
 }, null, 2) + '\n');
 
-// The plugin, placed where an install would put it.
-mkdirSync(join(profile, 'node_modules', '@riverho'), { recursive: true });
-try { symlinkSync(pluginDir, join(profile, 'node_modules', '@riverho', 'dsh-agent-playbook'), 'junction'); } catch { /* exists */ }
+// The plugin, placed where an install would put it. Derived from the manifest's own name
+// so a rename cannot silently relocate it: an npm install layout IS the package name.
+const installedPluginDir = join(profile, 'node_modules', pluginPkg.name);
+mkdirSync(dirname(installedPluginDir), { recursive: true });
+try { symlinkSync(pluginDir, installedPluginDir, 'junction'); } catch { /* exists */ }
 
 const resolveFrom = (spec) => {
   try {
@@ -125,7 +127,7 @@ const importFrom = (spec) => {
     ok('every declared peer dependency resolves from the profile', missing.length === 0,
       `missing: ${missing.join(', ')}`);
     ok('the plugin package loads and imports its peers (the precondition for apply())',
-      importFrom(pluginDir.replace(/\\/g, '/')).ok || importFrom(`file:///${join(profile, 'node_modules', '@riverho', 'dsh-agent-playbook', 'index.js').replace(/\\/g, '/')}`).ok,
+      importFrom(pluginDir.replace(/\\/g, '/')).ok || importFrom(`file:///${join(installedPluginDir, 'index.js').replace(/\\/g, '/')}`).ok,
       'neither the bare nor the file path import succeeded');
   }
 }

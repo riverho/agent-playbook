@@ -85,7 +85,7 @@ row predates its last commit).
   `claimOwnership`) plus resolved paths. Mutations stay on the CLI on purpose: every
   command reports refusal with `process.exit()`, which would kill an in-process host.
 
-### DeepSeek Harness plugin (`dsh-plugin/`, `@riverho/dsh-agent-playbook`)
+### DeepSeek Harness plugin (`dsh-plugin/`, `dsh-agent-playbook`)
 
 - One `playbook` tool — `status / anchor / next / claim / task / check / record / worker /
   init / unlock / repair` — plus context injection that stages the North Star, active

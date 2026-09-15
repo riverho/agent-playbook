@@ -10,7 +10,7 @@
 # that needs a live session.
 - insert:
     - id: agent-playbook-probe
-      name: '@riverho/dsh-agent-playbook'
+      name: 'dsh-agent-playbook'
       config:
         playbookPath: ''
         injectContext: true

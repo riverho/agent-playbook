@@ -1,4 +1,4 @@
-# @riverho/dsh-agent-playbook
+# dsh-agent-playbook
 
 A **DeepSeek Harness** plugin for [Agent-Playbook](https://github.com/riverho/agent-playbook).
 
@@ -118,17 +118,20 @@ The plugin **carries the engine**, so this is one install — no separate engine
 checkout and no version to keep in step by hand.
 
 ```bash
-# 1. the plugin (into the profile that runs your sessions)
-npm install @riverho/dsh-agent-playbook
-
-# 2. mount it — either add the package to your profile's bundle list, or paste the
-#    row from cordis.patch.yml into your profile patch
+# mount it into the profile that runs your sessions
+dsh plugin --profile <profile> add dsh-agent-playbook
 ```
 
-The package declares `dsh.bundle.patch`, so listing it as a bundle is enough:
+That is the whole install. `dsh plugin` forwards to pnpm inside the profile directory and
+then reconciles `dsh.profile.bundles`: a dependency whose package declares `dsh.bundle.patch`
+is appended to the layer stack automatically, so there is no list to edit by hand. (It
+needs pnpm on PATH — `corepack enable pnpm` if you do not have it.)
+
+If you would rather manage the dependency yourself, `npm install dsh-agent-playbook` and
+list it as a bundle. The package declares `dsh.bundle.patch`, so the name alone is the mount:
 
 ```json
-{ "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@riverho/dsh-agent-playbook"] } } }
+{ "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-agent-playbook"] } } }
 ```
 
 Then scaffold a playbook for the workspace you want to operate, from the agent itself:
@@ -149,7 +152,7 @@ plugin at it:
 ```yaml
 - insert:
     - id: agent-playbook
-      name: '@riverho/dsh-agent-playbook'
+      name: 'dsh-agent-playbook'
       config:
         playbookPath: ''                  # '' → discover: nested locations, then ancestors
         playbookDir: '.agents-playbook'   # where action=init scaffolds

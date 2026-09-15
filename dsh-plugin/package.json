@@ -1,5 +1,5 @@
 {
-  "name": "@riverho/dsh-agent-playbook",
+  "name": "dsh-agent-playbook",
   "version": "0.5.0",
   "description": "DeepSeek Harness plugin for Agent-Playbook: multi-agent claims, isolated git worktrees, and enforced acceptance checks. \"Done\" is an exit code, not a claim.",
   "type": "module",

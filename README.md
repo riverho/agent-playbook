@@ -122,13 +122,19 @@ There are npm aliases too: `npm run status`, `npm run next`, `npm run validate`,
 
 ## Install as a package
 
-The engine ships as a CLI, so you do not have to clone anything:
+The engine ships as a CLI, so you do not have to clone anything. **Run these in the project that
+will *use* the playbook — not inside the Agent-Playbook repo itself**, where `agents-playbook` would
+become a dependency of itself and npm would helpfully install a second, stale copy.
 
 ```bash
 npm install agents-playbook          # local → node_modules/.bin/pb
 npx --package agents-playbook pb status
 npm install -g agents-playbook       # global → `pb` on PATH
 ```
+
+> ⚠️ **Mind the plural.** The engine is `agents-playbook`. The singular **`agent-playbook` on npm is
+> an unrelated package by another author** — `npm install agent-playbook` succeeds and silently
+> installs the wrong thing. The DSH plugin is a separate package, `dsh-agent-playbook`.
 
 Then scaffold it into any repo:
 
@@ -251,8 +257,8 @@ surfaces at the heartbeat instead of being discovered later.
 
 ## DeepSeek Harness plugin
 
-`dsh-plugin/` is a first-party-style harness plugin — `@riverho/dsh-agent-playbook`. **It is not on
-npm yet**; run it from this repo (see `dsh-plugin/README.md`). It exposes one `playbook` tool
+`dsh-plugin/` is a first-party-style harness plugin — [`dsh-agent-playbook`](https://www.npmjs.com/package/dsh-agent-playbook),
+published on npm. It exposes one `playbook` tool
 (status / anchor / next / claim / task / check / record / worker / init / unlock / repair), registers
 the playbook's own skills as harness skills (`playbook-<id>`), and stages the constitution — North
 Star, active loop, task in hand and **its checks** — on the agent's inbox before each step, so
@@ -370,7 +376,7 @@ Being explicit about what is shipped and what is not:
 | --- | --- |
 | Engine (`agents-playbook`) | **published**, `0.5.0` |
 | Git tags | `v0.1.0`, `v0.3`, `v0.3.2` — no tag yet for `v0.4.0` / `v0.5.0` |
-| Harness plugin (`@riverho/dsh-agent-playbook`) | **not published** — run it from this repo |
+| Harness plugin (`dsh-agent-playbook`) | **published**, `0.5.0` (`npm install dsh-agent-playbook`, or `dsh plugin --profile <p> add dsh-agent-playbook`) |
 | Live in-harness verification | pending (a boot either serves the Web UI or runs an LLM task, so it stays a human step) |
 
 ## What was deliberately cut
@@ -469,13 +475,18 @@ node scripts/pb.mjs record --task T1 --action execute --status done --notes "做
 node scripts/pb.mjs report        # 寫出 artifacts/reports/report-<date>.md
 ```
 
-當套件用：
+當套件用 —— **要喺「會用」呢個 playbook 嘅專案入面跑，唔好喺 Agent-Playbook repo 自己裏面跑**
+（否則 `agents-playbook` 會變成自己嘅 dependency，npm 會靜靜雞裝多一份過期副本）：
 
 ```bash
 npm install agents-playbook                        # 本機 → node_modules/.bin/pb
 npm install -g agents-playbook                     # 全域 → 直接用 pb
 pb scaffold --target <repo>/.agents-playbook       # 複製入其他 repo（唔會覆蓋）
 ```
+
+> ⚠️ **小心複數。** 引擎叫 `agents-playbook`。npm 上單數嘅 **`agent-playbook` 係另一位作者嘅
+> 無關套件** —— `npm install agent-playbook` 會成功，但裝錯嘢。DSH 外掛係另一個獨立套件：
+> `dsh-agent-playbook`。
 
 ## 迴圈
 
@@ -546,8 +557,8 @@ pb repair-state --apply     # 由 journal 重建投影
 
 ## DeepSeek Harness 外掛
 
-`dsh-plugin/` 就係 harness 外掛 —— `@riverho/dsh-agent-playbook`。**目前未上 npm**，要由呢個 repo 跑
-（見 `dsh-plugin/README.md`）。佢提供一個 `playbook` 工具（status / anchor / next / claim / task /
+`dsh-plugin/` 就係 harness 外掛 —— [`dsh-agent-playbook`](https://www.npmjs.com/package/dsh-agent-playbook)，
+已經發佈上 npm。佢提供一個 `playbook` 工具（status / anchor / next / claim / task /
 check / record / worker / init / unlock / repair），將 playbook 自己嘅 skills 註冊成 harness skills
 （`playbook-<id>`），並且喺每一步之前將憲章（North Star、當前 loop、手上任務**同埋佢嘅檢查**）
 注入 agent 嘅 inbox，令 compaction 沖唔走個 plot。佢自帶引擎，所以安裝一步搞掂，亦唔會同測試過嘅
@@ -583,7 +594,7 @@ check / record / worker / init / unlock / repair），將 playbook 自己嘅 ski
 | --- | --- |
 | 引擎（`agents-playbook`） | **已發佈** `0.5.0` |
 | Git tag | 只有 `v0.1.0`、`v0.3`、`v0.3.2`；`v0.4.0` / `v0.5.0` 未有 tag |
-| Harness 外掛 | **未發佈**，由 repo 內執行 |
+| Harness 外掛（`dsh-agent-playbook`） | **已發佈** `0.5.0`（`npm install dsh-agent-playbook`，或 `dsh plugin --profile <p> add dsh-agent-playbook`） |
 | 真實 harness 內驗證 | 待做（一次開機唔係開 Web UI 就係跑 LLM 任務，所以呢步留返俾人） |
 
 ## 已知陷阱

@@ -9,7 +9,7 @@ not a hand copy — produces the bundle.
 |---|---|---|
 | GitHub (Open Source) | this repository | `github.com/riverho/agent-playbook` |
 | npm — engine | `agents-playbook@<version>` | `npmjs.com/package/agents-playbook` |
-| npm — DSH plugin | `@riverho/dsh-agent-playbook@<version>` | `npmjs.com/package/@riverho/dsh-agent-playbook` |
+| npm — DSH plugin | `dsh-agent-playbook@<version>` | `npmjs.com/package/dsh-agent-playbook` |
 
 ## 1. Bump the version, in three places
 
@@ -69,15 +69,23 @@ git tag v<version> && git push origin v<version>
 npm publish                    # from the repository root
 
 # npm — DSH plugin (requires the build from step 3)
-cd dsh-plugin && npm publish --access public
+cd dsh-plugin && npm publish
 ```
 
 `dsh-plugin/engine/` is generated and gitignored; it is created by step 3 and is only ever
 shipped inside the tarball.
 
+The plugin is published **unscoped** (`dsh-agent-playbook`), so `npm publish` needs no
+`--access` flag — unscoped packages are public by default. It is deliberately NOT under a
+scope: the earlier `@riverho/...` name was unpublishable from this account (the `@riverho`
+npm scope belongs to a different npm user, and npm answers a publish you may not make with
+`404`, not `403`). Do not "tidy" it back into a scope without checking `npm org ls <scope>`
+first — that listing shows the org's MEMBERS, so `someone - owner` means that user owns it,
+not that you do.
+
 ## 5. After publishing
 
-- `npm view agents-playbook version` and `npm view @riverho/dsh-agent-playbook version`
+- `npm view agents-playbook version` and `npm view dsh-agent-playbook version`
   must both equal `<version>`.
 - Install the plugin into a profile and confirm `playbook action=status` orients and
   `playbook action=init` scaffolds a workspace playbook — that is the end-to-end proof the
