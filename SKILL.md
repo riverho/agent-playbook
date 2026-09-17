@@ -155,7 +155,7 @@ source; the report is the artifact. Keep doing the work in the loop and the repo
 
 ## Running inside the DeepSeek Harness
 
-`dsh-plugin/` carries the harness integration (`dsh-agent-playbook`). It bundles its own
+`dsh-plugin/` carries the harness integration (`dsh-agents-playbook`). It bundles its own
 engine, so a deployment installs the plugin and scaffolds a playbook from it — no second install and
 no version to keep in step:
 

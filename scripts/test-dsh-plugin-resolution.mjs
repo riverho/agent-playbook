@@ -10,7 +10,7 @@
 // there, exactly as the loader's import would.
 //
 // It also pins the shim convention the plugin's engine copy depends on:
-//   <project>/node_modules/dsh-agent-playbook/engine/scripts/pb.mjs
+//   <project>/node_modules/dsh-agents-playbook/engine/scripts/pb.mjs
 // resolves `js-yaml` by walking up to <project>/node_modules — which is why the engine the
 // plugin scaffolds into a workspace can run at all, and why the plugin declares js-yaml.
 //

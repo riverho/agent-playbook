@@ -171,7 +171,7 @@ function build() {
     version: enginePkg.version,
     private: true,
     type: 'module',
-    description: 'Agent-Playbook engine bundled with dsh-agent-playbook.',
+    description: 'Agent-Playbook engine bundled with dsh-agents-playbook.',
     dependencies: { 'js-yaml': '^4.1.0' },
     engines: { node: '>=18' },
   }, null, 2) + '\n', 'utf8');
@@ -232,7 +232,7 @@ function checkManifest(builtVersion) {
   // A package that depends on itself. Nothing in the source tree looks wrong when this
   // happens, which is why it needs a gate rather than care: running `npm install <own-name>`
   // from inside the package folder adds it and rewrites the manifest. That shipped once —
-  // 0.5.1 went out with `dsh-agent-playbook` in its own `dependencies` — and every
+  // 0.5.1 went out with `dsh-agents-playbook` in its own `dependencies` — and every
   // consumer would have resolved the plugin against itself.
   for (const field of ['dependencies', 'devDependencies', 'optionalDependencies']) {
     if (Object.prototype.hasOwnProperty.call(pluginPkg[field] || {}, pluginPkg.name)) {

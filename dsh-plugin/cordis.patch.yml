@@ -1,4 +1,4 @@
-# The bundle patch for dsh-agent-playbook.
+# The bundle patch for dsh-agents-playbook.
 #
 # Added to a profile's bundle list, this row mounts the plugin. `config` is patched
 # whole (not merged), so a deployment that wants different behaviour restates the
@@ -9,7 +9,7 @@
 # there is none. That keeps it harmless in workspaces that do not use a playbook.
 - insert:
     - id: agent-playbook
-      name: 'dsh-agent-playbook'
+      name: 'dsh-agents-playbook'
       config:
         # Empty → discover from the session workspace. Set an absolute path to pin
         # one playbook regardless of where the session was opened.

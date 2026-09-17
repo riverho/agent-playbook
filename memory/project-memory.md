@@ -168,7 +168,7 @@ This file is read on every session, right after `playbook.yaml`. Keep it short a
      rows — do not "fix" that by widening the scope.
 
 9. **The DSH plugin's boundary: the engine owns truth, the plugin owns convenience.** It lives in
-   `dsh-plugin/` (package `dsh-agent-playbook`). Two rules define it:
+   `dsh-plugin/` (package `dsh-agents-playbook`). Two rules define it:
    - **It never re-implements a gate.** Every action is a `pb` invocation. A second opinion about
      "done" is exactly the failure the engine exists to refuse.
    - **It shells out; it does not import.** Every `pb` command reports refusal with

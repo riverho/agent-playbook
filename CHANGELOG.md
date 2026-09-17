@@ -5,6 +5,21 @@ makes the pair identifiable. `npm run check:version` guards the engine's own
 `package.json` ↔ `playbook.yaml` agreement, and `npm run pack:plugin` refuses to build a
 tarball whose plugin version differs from the engine it carries.
 
+## 0.6.2 — the plugin takes the plural name
+
+Patch. No engine behaviour changed.
+
+### Changed
+
+- **The npm plugin is `dsh-agents-playbook` (plural).** It was `dsh-agent-playbook`; the
+  rename makes the plugin agree with the engine (`agents-playbook`) and the repository. The
+  `name` in `dsh-plugin/package.json`, the mounted row in `dsh-plugin/cordis.patch.yml`, every
+  install instruction, and the self-dependency guard all move together. Publishing the new
+  name is a fresh package — the old one is not a upgrade target, so profiles install
+  `dsh-agents-playbook@^0.6.2` explicitly.
+- The self-dependency guard and the bundle/version checks are unchanged: they compare against
+  whatever `name` the manifest declares, so the rename cannot smuggle a self-reference back in.
+
 ## 0.6.1 — the repository takes the plural name
 
 Patch. No engine behaviour changed.
@@ -29,8 +44,8 @@ minor. Both defects were invisible in the source tree, which is the only reason 
 
 ### Fixed
 
-- **The plugin depended on ITSELF.** `dsh-plugin/package.json` listed `dsh-agent-playbook` in
-  its own `dependencies` — what running `npm install dsh-agent-playbook` from inside
+- **The plugin depended on ITSELF.** `dsh-plugin/package.json` listed `dsh-agents-playbook` in
+  its own `dependencies` — what running `npm install dsh-agents-playbook` from inside
   `dsh-plugin/` leaves behind. 0.5.1 published with it. It is not fatal (npm resolves a
   self-range to the installed copy, so there is no nested copy and the plugin loads), but every
   consumer resolved the plugin against itself. Removed — and `pack:plugin` now **refuses** to
@@ -88,13 +103,13 @@ blocks unconditionally force-continues *every* step. A given claim is reminded a
 
 ## 0.5.1 — the plugin's first published revision
 
-Patch. 0.5.0 published the plugin to npm for the first time (as `dsh-agent-playbook`, matching
+Patch. 0.5.0 published the plugin to npm for the first time (as `dsh-agents-playbook`, matching
 the engine's unscoped convention); 0.5.1 carries the corrections that first publication
 surfaced. No engine behaviour changed.
 
 ### Fixed
 
-- **The plugin is `dsh-agent-playbook`, unscoped.** The earlier `@riverho/dsh-agent-playbook`
+- **The plugin is `dsh-agents-playbook`, unscoped.** The earlier `@riverho/dsh-agents-playbook`
   name could not be published from this account at all: the `@riverho` npm scope belongs to a
   different npm user, and npm answers a publish you may not make with `404`, not `403`. Verified
   by `npm org ls` — that command lists an org's MEMBERS, so `someone - owner` means that user
@@ -110,7 +125,7 @@ surfaced. No engine behaviour changed.
 ### Documentation
 
 - The plugin's install instruction is now the one command it actually is:
-  `dsh plugin --profile <profile> add dsh-agent-playbook`. `dsh plugin` forwards to pnpm inside
+  `dsh plugin --profile <profile> add dsh-agents-playbook`. `dsh plugin` forwards to pnpm inside
   the profile and then reconciles `dsh.profile.bundles`, appending any dependency whose package
   declares `dsh.bundle.patch` — so there is no bundle list to edit by hand. The manual route is
   kept as the alternative.
@@ -207,7 +222,7 @@ row predates its last commit).
   `claimOwnership`) plus resolved paths. Mutations stay on the CLI on purpose: every
   command reports refusal with `process.exit()`, which would kill an in-process host.
 
-### DeepSeek Harness plugin (`dsh-plugin/`, `dsh-agent-playbook`)
+### DeepSeek Harness plugin (`dsh-plugin/`, `dsh-agents-playbook`)
 
 - One `playbook` tool — `status / anchor / next / claim / task / check / record / worker /
   init / unlock / repair` — plus context injection that stages the North Star, active

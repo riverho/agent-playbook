@@ -1,9 +1,9 @@
 # Agents-Playbook
 
-Current release: **v0.6.1** — **multi-agent leases**, complete **worktrees**, crash recovery, the
-**DeepSeek Harness plugin**, and the **Stop gate** that enforces the loop at the harness boundary. On
-npm as [`agents-playbook`](https://www.npmjs.com/package/agents-playbook)
-· [what's in it](#whats-in-v061).
+Current release: **v0.6.2** — **multi-agent leases**, complete **worktrees**, crash recovery, the
+**DeepSeek Harness plugin** (`dsh-agents-playbook`), and the **Stop gate** that enforces the loop at
+the harness boundary. On npm as [`agents-playbook`](https://www.npmjs.com/package/agents-playbook)
+· [what's in it](#whats-in-v062).
 
 > **Done is an exit code, not prose.** The kernel is a `pb record --status done` that re-runs each
 > task's `acceptance_checks` (shell commands) and *refuses* on failure. Anchoring, the North Star
@@ -30,7 +30,7 @@ Agents lose the thread between sessions, drift from process, and — worst of al
 That's the whole thesis. No specs pipeline, no DAG scheduler, no debt ledger — the playbook earns
 complexity only when a real workload demands it.
 
-## What's in v0.6.1
+## What's in v0.6.2
 
 The 0.6.x line turned a single-agent loop into a shared one, then closed the last gap where the
 harness only *asked* the agent to verify. Existing single-agent playbooks keep working unchanged —
@@ -89,7 +89,7 @@ via `stopGate`, default `true`).
 | --- | --- |
 | **Worktrees** | Atomic acquisition — one live slot per task — plus `status / exec / verify / merge / remove`; a merge gate that reads the **branch** (missing, dirty, or zero commits ahead ⇒ refused); `record --at <worktree>` for checks that ran in the worker tree. |
 | **Session workspace, fixed** | Workspace resolution no longer falls through to `process.cwd()` (the server's launch directory), so a session cannot adopt another project's playbook; when no workspace resolves the plugin refuses instead of guessing. |
-| **Plugin self-dependency, fixed** | `dsh-plugin/package.json` no longer lists `dsh-agent-playbook` in its own `dependencies`, and `pack:plugin` refuses a manifest that names the package itself. |
+| **Plugin self-dependency, fixed** | `dsh-plugin/package.json` no longer lists `dsh-agents-playbook` in its own `dependencies`, and `pack:plugin` refuses a manifest that names the package itself. |
 | **Crash recovery** | `pb repair-state --check` (exit 1 on drift, CI-wireable) and `--apply`, which rebuilds the projection from the journal; projection-only fields are preserved, because deleting them would be data loss dressed up as a repair. `pb checkpoint` now reports drift and a journal-ahead-of-projection gap. |
 | **Engine as a library** | Importing `scripts/pb.mjs` no longer executes a command — it exports a read-only API (`status`, `tasks`, `task`, `journal`, `validate`, `workerStatus`, `mergeReady`, `claimOwnership`). Mutations stay on the CLI on purpose, since `process.exit()` would kill an in-process host. |
 | **Tracked-state guard, fixed** | The guard against committing runtime state was inert on Windows (POSIX redirect under `cmd.exe`, `require` inside an ESM module, separator mismatch) and would have thrown once past that. Now portable — and it fires on this repo. |
@@ -145,7 +145,7 @@ npm install -g agents-playbook       # global → `pb` on PATH
 
 > ⚠️ **Mind the plural.** The engine is `agents-playbook`. The singular **`agent-playbook` on npm is
 > an unrelated package by another author** — `npm install agent-playbook` succeeds and silently
-> installs the wrong thing. The DSH plugin is a separate package, `dsh-agent-playbook`.
+> installs the wrong thing. The DSH plugin is a separate package, `dsh-agents-playbook`.
 
 ### The naming rule (and why it is not a preference)
 
@@ -160,7 +160,7 @@ and the install directory followed it.
 | Install directory | `.agents-playbook` | plural; what `scaffold` and `action=init` create |
 | Legacy install directory | `.agent-playbook` | singular; **still discovered**, so older projects are not orphaned |
 | Older conventions | `.playbook`, `agent-playbook` | also still discovered |
-| npm plugin | `dsh-agent-playbook` | independent package |
+| npm plugin | `dsh-agents-playbook` | independent package |
 | Project identity | `name:` in `playbook.yaml` | per-project, unrelated to the two above |
 
 Nothing new should be written with the singular spelling; it is supported, not recommended.
@@ -286,8 +286,9 @@ surfaces at the heartbeat instead of being discovered later.
 
 ## DeepSeek Harness plugin
 
-`dsh-plugin/` is a first-party-style harness plugin — [`dsh-agent-playbook`](https://www.npmjs.com/package/dsh-agent-playbook),
-published on npm. It exposes one `playbook` tool
+`dsh-plugin/` is a first-party-style harness plugin — [`dsh-agents-playbook`](https://www.npmjs.com/package/dsh-agents-playbook),
+published on npm (the 0.6.2 rename to the plural; earlier revisions shipped under the singular
+spelling). It exposes one `playbook` tool
 (status / anchor / next / claim / task / check / record / worker / init / unlock / repair), registers
 the playbook's own skills as harness skills (`playbook-<id>`), and stages the constitution — North
 Star, active loop, task in hand and **its checks** — on the agent's inbox before each step, so
@@ -403,9 +404,9 @@ Being explicit about what is shipped and what is not:
 
 | Artifact | State |
 | --- | --- |
-| Engine (`agents-playbook`) | **published**, `0.6.0` — the repo is at `0.6.1`, not yet published |
-| Git tags | `v0.1.0`, `v0.3`, `v0.3.2`, `v0.6.0` |
-| Harness plugin (`dsh-agent-playbook`) | **published**, `0.6.0` — install with `dsh plugin --profile <p> add dsh-agent-playbook` (needs pnpm; plain `npm install` does **not** enable it) |
+| Engine (`agents-playbook`) | **published**, `0.6.0` — the repo is at `0.6.2`, not yet published |
+| Git tags | `v0.1.0`, `v0.3`, `v0.3.2`, `v0.6.0`, `v0.6.1` |
+| Harness plugin (`dsh-agents-playbook`) | **pending**, `0.6.2` — renamed to the plural in 0.6.2; not yet on npm under the new name. Install with `dsh plugin --profile <p> add dsh-agents-playbook@^0.6.2` once published (needs pnpm; plain `npm install` does **not** enable it) |
 | Live in-harness verification | pending (a boot either serves the Web UI or runs an LLM task, so it stays a human step) |
 
 ## What was deliberately cut

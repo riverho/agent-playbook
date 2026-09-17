@@ -1,4 +1,4 @@
-# dsh-agent-playbook
+# dsh-agents-playbook
 
 A **DeepSeek Harness** plugin for [Agent-Playbook](https://github.com/riverho/agents-playbook).
 
@@ -118,7 +118,7 @@ The plugin **carries the engine**, so this is one install — no separate engine
 checkout and no version to keep in step by hand.
 
 ```bash
-dsh plugin --profile <profile> add dsh-agent-playbook
+dsh plugin --profile <profile> add dsh-agents-playbook
 ```
 
 That is the whole install. It installs the package AND enables it: `dsh plugin` forwards to
@@ -130,8 +130,8 @@ Verified end to end — after that one command,
 `$DSH_HOME/profiles/<profile>/package.json` contains both
 
 ```json
-"dependencies": { "dsh-agent-playbook": "^0.6.0" },
-"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "…", "dsh-agent-playbook"] } }
+"dependencies": { "dsh-agents-playbook": "^0.6.2" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "…", "dsh-agents-playbook"] } }
 ```
 
 and `dsh --profile <profile> --dump-config` composes `- id: agent-playbook`.
@@ -148,7 +148,7 @@ Without it the command fails with `dsh: pnpm not found on PATH` (exit 127).
 
 ### What does NOT work: plain `npm install`
 
-`npm install dsh-agent-playbook` does **not** enable the plugin. It installs a package into
+`npm install dsh-agents-playbook` does **not** enable the plugin. It installs a package into
 whatever directory you happen to be in, and the harness only reads
 `$DSH_HOME/profiles/<name>/package.json` — so the plugin lands where nothing looks for it and
 nothing appears to happen. That is the confusing "installed but DSH wants more steps" state.
@@ -158,7 +158,7 @@ into the profile directory and add it to the bundle list — the package declare
 `dsh.bundle.patch`, so the name alone is the mount:
 
 ```json
-{ "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-agent-playbook"] } } }
+{ "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-agents-playbook"] } } }
 ```
 
 ### Two things that look like problems but are not
@@ -195,7 +195,7 @@ If you already have a playbook (or want it somewhere else), point the plugin at 
 ```yaml
 - insert:
     - id: agent-playbook
-      name: 'dsh-agent-playbook'
+      name: 'dsh-agents-playbook'
       config:
         playbookPath: ''                  # '' → discover: nested locations, then ancestors
         playbookDir: '.agents-playbook'   # where action=init scaffolds

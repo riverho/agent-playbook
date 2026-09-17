@@ -9,7 +9,7 @@ not a hand copy — produces the bundle.
 |---|---|---|
 | GitHub (Open Source) | this repository | `github.com/riverho/agents-playbook` |
 | npm — engine | `agents-playbook@<version>` | `npmjs.com/package/agents-playbook` |
-| npm — DSH plugin | `dsh-agent-playbook@<version>` | `npmjs.com/package/dsh-agent-playbook` |
+| npm — DSH plugin | `dsh-agents-playbook@<version>` | `npmjs.com/package/dsh-agents-playbook` |
 
 ## 1. Bump the version, in three places
 
@@ -75,7 +75,7 @@ cd dsh-plugin && npm publish
 `dsh-plugin/engine/` is generated and gitignored; it is created by step 3 and is only ever
 shipped inside the tarball.
 
-The plugin is published **unscoped** (`dsh-agent-playbook`), so `npm publish` needs no
+The plugin is published **unscoped** (`dsh-agents-playbook`), so `npm publish` needs no
 `--access` flag — unscoped packages are public by default. It is deliberately NOT under a
 scope: the earlier `@riverho/...` name was unpublishable from this account (the `@riverho`
 npm scope belongs to a different npm user, and npm answers a publish you may not make with
@@ -85,7 +85,7 @@ not that you do.
 
 ## 5. After publishing
 
-- `npm view agents-playbook version` and `npm view dsh-agent-playbook version`
+- `npm view agents-playbook version` and `npm view dsh-agents-playbook version`
   must both equal `<version>`.
 - Install the plugin into a profile and confirm `playbook action=status` orients and
   `playbook action=init` scaffolds a workspace playbook — that is the end-to-end proof the
@@ -111,13 +111,13 @@ status first, then wait. `npm view <pkg> versions` (plural) is the reliable read
 
 ### Upgrading a profile needs an explicit range
 
-A profile installs with a caret range, and **`^0.6.0` does not include `0.6.1`** — for `0.x`,
+A profile installs with a caret range, and **`^0.6.1` does not include `0.7.0`** — for `0.x`,
 caret is restricted to the same minor. So `dsh plugin --profile <p> add <pkg>` reports
 "Lockfile is up to date, resolution step is skipped" and changes nothing. Move the range
 explicitly:
 
 ```bash
-dsh plugin --profile <profile> add dsh-agent-playbook@^<version>
+dsh plugin --profile <profile> add dsh-agents-playbook@^<version>
 ```
 
 pnpm may also record a `minimumReleaseAgeExclude` entry for a just-published version: that is
