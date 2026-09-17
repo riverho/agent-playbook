@@ -27,7 +27,7 @@ writeFileSync(join(install, 'playbook.yaml'),
   '# USER_CUSTOM_MARKER — must survive an update\n' +
   'name: t\nversion: 0.3.2\n' +
   'index:\n  memory:\n    backlog: memory/backlog.yaml\n    journal: memory/journal.ndjson\n' +
-  'update:\n  repo: riverho/agent-playbook\n');
+  'update:\n  repo: riverho/agents-playbook\n');
 writeFileSync(join(install, 'memory/journal.ndjson'), '');
 writeFileSync(join(install, 'memory/backlog.yaml'), 'tasks:\n  - {id: USER_TASK_KEEP, status: todo}\n'); // user state
 

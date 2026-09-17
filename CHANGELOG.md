@@ -5,6 +5,21 @@ makes the pair identifiable. `npm run check:version` guards the engine's own
 `package.json` ↔ `playbook.yaml` agreement, and `npm run pack:plugin` refuses to build a
 tarball whose plugin version differs from the engine it carries.
 
+## 0.6.1 — the repository takes the plural name
+
+Patch. No engine behaviour changed.
+
+### Changed
+
+- **The GitHub repository is `agents-playbook` (plural).** It was renamed from the singular
+  spelling to match the npm engine and the install directory the naming rule had already
+  settled on, so every repository URL — `package.json`, `dsh-plugin/package.json`, the
+  plugin README, the blogwatch pack source, `RELEASE.md` — and the `pb update` default now
+  point at `github.com/riverho/agents-playbook`. The singular URL redirects, but the recorded
+  name is the honest one.
+- **The README is English-only.** The 繁體中文 half duplicated the English content section
+  for section; it is removed so there is one source to keep current.
+
 ## 0.6.0 — the right workspace, no self-dependency, and the Stop gate
 
 Minor, not patch: alongside two defect fixes that 0.5.1 shipped, this release adds the first

@@ -1,6 +1,6 @@
 {
   "name": "agents-playbook",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "type": "module",
   "description": "A portable, agent-first playbook engine: a master playbook.yaml that indexes skills + processes, a friction-free loop CLI with enforced executable acceptance checks, and agent records that roll up into human reports. Everything lives in the folder (carry-on).",
   "keywords": [
@@ -13,11 +13,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/riverho/agent-playbook.git"
+    "url": "git+https://github.com/riverho/agents-playbook.git"
   },
-  "homepage": "https://github.com/riverho/agent-playbook#readme",
+  "homepage": "https://github.com/riverho/agents-playbook#readme",
   "bugs": {
-    "url": "https://github.com/riverho/agent-playbook/issues"
+    "url": "https://github.com/riverho/agents-playbook/issues"
   },
   "bin": {
     "pb": "scripts/pb.mjs"

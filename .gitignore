@@ -36,6 +36,8 @@ dsh-plugin/package-lock.json
 2026-06-10-235329-local-command-caveatcaveat-the-messages-below.txt
 AGENTS.md
 CLAUDE.md
+SMOKE*.*
+local*.*
 
 # Code deliberately cut from the engine (old spec/workmap layer). Safe to delete.
 attic/

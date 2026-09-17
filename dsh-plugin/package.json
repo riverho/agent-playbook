@@ -1,6 +1,6 @@
 {
   "name": "dsh-agent-playbook",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "DeepSeek Harness plugin for Agent-Playbook: multi-agent claims, isolated git worktrees, and enforced acceptance checks. \"Done\" is an exit code, not a claim.",
   "type": "module",
   "main": "index.js",
@@ -30,12 +30,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/riverho/agent-playbook.git",
+    "url": "git+https://github.com/riverho/agents-playbook.git",
     "directory": "dsh-plugin"
   },
-  "homepage": "https://github.com/riverho/agent-playbook#readme",
+  "homepage": "https://github.com/riverho/agents-playbook#readme",
   "bugs": {
-    "url": "https://github.com/riverho/agent-playbook/issues"
+    "url": "https://github.com/riverho/agents-playbook/issues"
   },
   "dsh": {
     "bundle": {

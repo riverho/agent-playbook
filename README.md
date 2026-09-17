@@ -1,10 +1,9 @@
-# Agent-Playbook
+# Agents-Playbook
 
-**English** · [繁體中文](#繁體中文)
-
-Current release: **v0.5.0** — **multi-agent leases**, complete **worktrees**, crash recovery, and the
-**DeepSeek Harness plugin**. On npm as [`agents-playbook`](https://www.npmjs.com/package/agents-playbook)
-· [what's in it](#whats-in-v050).
+Current release: **v0.6.1** — **multi-agent leases**, complete **worktrees**, crash recovery, the
+**DeepSeek Harness plugin**, and the **Stop gate** that enforces the loop at the harness boundary. On
+npm as [`agents-playbook`](https://www.npmjs.com/package/agents-playbook)
+· [what's in it](#whats-in-v061).
 
 > **Done is an exit code, not prose.** The kernel is a `pb record --status done` that re-runs each
 > task's `acceptance_checks` (shell commands) and *refuses* on failure. Anchoring, the North Star
@@ -31,10 +30,11 @@ Agents lose the thread between sessions, drift from process, and — worst of al
 That's the whole thesis. No specs pipeline, no DAG scheduler, no debt ledger — the playbook earns
 complexity only when a real workload demands it.
 
-## What's in v0.5.0
+## What's in v0.6.1
 
-The release that turned a single-agent loop into a shared one. Existing single-agent playbooks keep
-working unchanged — `pb next --claim`, `pb record` and `acceptance_checks` behave as before.
+The 0.6.x line turned a single-agent loop into a shared one, then closed the last gap where the
+harness only *asked* the agent to verify. Existing single-agent playbooks keep working unchanged —
+`pb next --claim`, `pb record` and `acceptance_checks` behave as before.
 
 ### Multi-agent leases and attributable writes
 
@@ -74,11 +74,22 @@ stays the contract and a refusal can never terminate the host.
 
 → full detail under [DeepSeek Harness plugin](#deepseek-harness-plugin)
 
+### The Stop gate
+
+Everything else in the plugin *asks* the agent to verify. The Stop gate is the first place the
+harness **refuses**: when a turn would otherwise close while the agent still holds a claim it never
+resolved, the turn is held open and the model is told which task to resolve and how — the project's
+own thesis ("done is an enforced exit code") applied one layer up, where the agent cannot simply
+decline to cooperate. It is deliberately timid (a claim is reminded about at most once; configurable
+via `stopGate`, default `true`).
+
 ### Also in this release
 
 | Area | What shipped |
 | --- | --- |
 | **Worktrees** | Atomic acquisition — one live slot per task — plus `status / exec / verify / merge / remove`; a merge gate that reads the **branch** (missing, dirty, or zero commits ahead ⇒ refused); `record --at <worktree>` for checks that ran in the worker tree. |
+| **Session workspace, fixed** | Workspace resolution no longer falls through to `process.cwd()` (the server's launch directory), so a session cannot adopt another project's playbook; when no workspace resolves the plugin refuses instead of guessing. |
+| **Plugin self-dependency, fixed** | `dsh-plugin/package.json` no longer lists `dsh-agent-playbook` in its own `dependencies`, and `pack:plugin` refuses a manifest that names the package itself. |
 | **Crash recovery** | `pb repair-state --check` (exit 1 on drift, CI-wireable) and `--apply`, which rebuilds the projection from the journal; projection-only fields are preserved, because deleting them would be data loss dressed up as a repair. `pb checkpoint` now reports drift and a journal-ahead-of-projection gap. |
 | **Engine as a library** | Importing `scripts/pb.mjs` no longer executes a command — it exports a read-only API (`status`, `tasks`, `task`, `journal`, `validate`, `workerStatus`, `mergeReady`, `claimOwnership`). Mutations stay on the CLI on purpose, since `process.exit()` would kill an in-process host. |
 | **Tracked-state guard, fixed** | The guard against committing runtime state was inert on Windows (POSIX redirect under `cmd.exe`, `require` inside an ESM module, separator mismatch) and would have thrown once past that. Now portable — and it fires on this repo. |
@@ -392,9 +403,9 @@ Being explicit about what is shipped and what is not:
 
 | Artifact | State |
 | --- | --- |
-| Engine (`agents-playbook`) | **published**, `0.5.0` — the repo is at `0.5.1`, not yet published |
-| Git tags | `v0.1.0`, `v0.3`, `v0.3.2` — nothing tagged for `v0.4.x` / `v0.5.x` |
-| Harness plugin (`dsh-agent-playbook`) | **published**, `0.5.1` — install with `dsh plugin --profile <p> add dsh-agent-playbook` (needs pnpm; plain `npm install` does **not** enable it) |
+| Engine (`agents-playbook`) | **published**, `0.6.0` — the repo is at `0.6.1`, not yet published |
+| Git tags | `v0.1.0`, `v0.3`, `v0.3.2`, `v0.6.0` |
+| Harness plugin (`dsh-agent-playbook`) | **published**, `0.6.0` — install with `dsh plugin --profile <p> add dsh-agent-playbook` (needs pnpm; plain `npm install` does **not** enable it) |
 | Live in-harness verification | pending (a boot either serves the Web UI or runs an LLM task, so it stays a human step) |
 
 ## What was deliberately cut
@@ -405,249 +416,3 @@ removed from the engine: no command reads it, and nothing here depends on it. A 
 copy may still exist on the author's machine, but it is gitignored and **not shipped** — a clone
 gets the lean engine only. If a real workload ever needs orchestration, build it against
 demonstrated need, not anticipation.
-
----
-
-# 繁體中文
-
-[English](#agent-playbook) · **繁體中文**
-
-目前版本：**v0.5.0**（npm：[`agents-playbook`](https://www.npmjs.com/package/agents-playbook)）
-
-> **「做完」係一個 exit code，唔係一句聲稱。** 整個內核就係 `pb record --status done`：佢會
-> 重新執行該任務嘅 `acceptance_checks`（shell 指令），任何一條失敗就**拒絕記錄**。anchoring、
-> North Star（`north_star`）、cycle brief、可攜性 —— 全部只係**支撐**呢道驗證閘，唔可以取代佢。
-
-## 呢個係乜
-
-一個**可攜、agent 優先嘅 playbook 引擎**。放入任何資料夾，agent 就可以無摩擦咁跑迴圈：讀 master
-定位 → 揀任務 → 做嘢 → 用**可執行嘅驗收檢查**證明 → 記錄 → 匯總成人類可讀嘅報告。全部檔案都喺
-資料夾入面，複製去邊都照跑（carry-on）。
-
-## 核心理念
-
-Agent 嘅三大毛病：跨 session 失憶、偏離流程、未做完就宣佈「搞掂」。呢個 playbook 用最少嘅機械解決：
-
-1. **一個 master** —— 每次迭代都重新錨定 `playbook.yaml`（the fixation），靠 `pb anchor` 廉價
-   重新注入，令長 context 同 compaction 都沖唔走。
-2. **強制完成** —— 任務嘅 `acceptance_checks` 係 shell 指令，`pb record --status done` 會執行佢哋，
-   失敗就拒絕記錄。**exit code 令迴圈誠實，流程文件唔會。**
-3. **狀態落地** —— backlog 同 append-only journal 喺磁碟，context 冇咗唔等於工作冇咗。
-
-## v0.5.0 有咩新
-
-呢個版本將「單 agent 迴圈」變成「多 agent 共用」。舊有單 agent playbook **完全唔受影響** ——
-`pb next --claim`、`pb record`、`acceptance_checks` 行為同以前一樣。
-
-### 多代理：認領即租約，寫入可追溯
-
-**佢補嘅洞：** 幾個 agent 共用一個 backlog 嗰陣，冇人講得出**邊個先寫、邊個後寫、代表邊個寫** ——
-fan-out 會靜靜雞互相覆蓋，而 sub-agent 要冒充 parent 才記錄得到。
-
-- **所有共享狀態經同一個序列化交易** —— O_EXCL 鎖、入到臨界區重新讀取、原子替換。舊寫法係將
-  整個物件 read-modify-write，會丟失並行寫入者嘅改動；用突變測試證明過：停用鎖，回歸測試就變紅
-  而且係真實嘅 lost update。
-- **次序係記錄落嚟，唔係推斷。** 每行 journal 帶單調遞增嘅 `seq` 同寫入者，而 journal 行同狀態
-  變更喺**同一個交易**內提交 —— 所以兩份紀錄永遠唔會對「邊個最後寫」有分歧。
-- **認領即租約。** `pb next --claim` 鑄造一個 **claim token**。寫入者用三種方式之一證明自己有權：
-  本身就係 holder、出示 token、或者 holder 出現喺佢申報嘅 delegation chain。所以 sub-agent
-  **以自己身份**記錄，帶 `ownership: token|chain`。
-- **無證明嘅寫入會標記而唔係丟棄**（`ownership: unproven`）—— 丟失真實工作比留低一行 unproven 更差。
-- **鎖只按年齡打破**，永遠唔探測持有者死活：pid 探測喺 Windows 會將活住嘅持有者誤報為死咗，
-  令等待者偷走一個仍然生效嘅鎖。`pb release` 將認領還返 pool；`pb unlock --force` 係逃生門。
-
-→ 詳見[多代理（Multi-Agent）](#多代理multi-agent)
-
-### DeepSeek Harness 外掛整合
-
-[`dsh-plugin/`](dsh-plugin/README.md) 將迴圈帶入 harness：一個 `playbook` 工具
-（status / anchor / next / claim / task / check / record / worker / init / unlock / repair）、
-將 playbook 自己嘅 skills 註冊成 harness skills（`playbook-<id>`），並且喺每一步之前將憲章
-（North Star、當前 loop、手上任務**同埋佢嘅檢查**）注入 agent 嘅 inbox，令 compaction 沖唔走個 plot。
-
-佢**自帶引擎**（安裝一步搞掂，唔使人手對版本），而且**永遠唔會重新實作任何閘** —— 每個動作都係
-一次 `pb` 呼叫，以 subprocess 執行，所以 exit code 保得住合約，拒絕亦永遠殺唔死 host。
-
-→ 詳見 [DeepSeek Harness 外掛](#deepseek-harness-外掛)
-
-### 同版本其他內容
-
-| 範疇 | 內容 |
-| --- | --- |
-| **WorkTree** | 原子認領 —— 每個任務只有一個 live slot —— 加 `status / exec / verify / merge / remove`；合併閘讀**分支**（唔見咗、dirty、或者相對 base 零 commit ⇒ 拒絕）；`record --at <worktree>` 用嚟記錄喺 worker tree 跑過嘅檢查。 |
-| **崩潰復原** | `pb repair-state --check`（有 drift 就 exit 1，可入 CI）同 `--apply`，由 journal 重建投影；只存在於投影嘅欄位會被保留，因為刪咗佢哋係「扮維修嘅資料損失」。`pb checkpoint` 而家會報 drift 同「journal 超前投影」嘅落差。 |
-| **引擎即函式庫** | Import `scripts/pb.mjs` 唔再執行指令 —— 佢 export 一個**唯讀** API（`status`、`tasks`、`task`、`journal`、`validate`、`workerStatus`、`mergeReady`、`claimOwnership`）。變更操作刻意留喺 CLI，因為 `process.exit()` 會殺死 in-process host。 |
-| **追蹤狀態守衛，已修** | 防止將 runtime 狀態 commit 入 git 嘅守衛喺 Windows 完全失效（`cmd.exe` 下嘅 POSIX redirect、ESM 內用 `require`、路徑分隔符不符），而且過到第一關都會拋錯。而家跨平台，並且喺呢個 repo 真係會響。 |
-
-完整細節見 [`CHANGELOG.md`](CHANGELOG.md)；發佈步驟見 [`RELEASE.md`](RELEASE.md)。
-
-## 快速開始
-
-```bash
-npm install                       # 只有一個依賴：js-yaml
-node scripts/pb.mjs bootstrap     # 首次空安裝：產生最精簡嘅 skill/process
-node scripts/pb.mjs status        # 定位
-node scripts/pb.mjs next --claim  # 揀下一個任務並認領（會印出驗收檢查）
-node scripts/pb.mjs validate --task T1
-node scripts/pb.mjs record --task T1 --action execute --status done --notes "做咗乜"
-node scripts/pb.mjs report        # 寫出 artifacts/reports/report-<date>.md
-```
-
-當套件用 —— **要喺「會用」呢個 playbook 嘅專案入面跑，唔好喺 Agent-Playbook repo 自己裏面跑**
-（否則 `agents-playbook` 會變成自己嘅 dependency，npm 會靜靜雞裝多一份過期副本）：
-
-```bash
-npm install agents-playbook                        # 本機 → node_modules/.bin/pb
-npm install -g agents-playbook                     # 全域 → 直接用 pb
-pb scaffold --target <repo>/.agents-playbook       # 複製入其他 repo（唔會覆蓋）
-```
-
-> ⚠️ **小心複數。** 引擎叫 `agents-playbook`。npm 上單數嘅 **`agent-playbook` 係另一位作者嘅
-> 無關套件** —— `npm install agent-playbook` 會成功，但裝錯嘢。DSH 外掛係另一個獨立套件：
-> `dsh-agent-playbook`。
-
-### 命名規則（呢個唔係偏好，係事實）
-
-凡係由引擎控制嘅名，**複數 `agents-playbook` 為準**。呢個係 npm registry 造成嘅意外，唔係設計
-選擇 —— 單數 npm 名早已被佔，所以發佈嘅引擎用複數，安裝目錄亦跟住。記錄喺呢度，免得以後再糾結。
-
-| 對象 | 名 | 備註 |
-|---|---|---|
-| npm 引擎 | `agents-playbook` | 複數；單數係別人嘅 package |
-| 安裝目錄 | `.agents-playbook` | 複數；`scaffold` 同 `action=init` 產生嘅 |
-| 舊安裝目錄 | `.agent-playbook` | 單數；**仍然會被發現**，舊 project 唔會變孤兒 |
-| 更舊慣例 | `.playbook`、`agent-playbook` | 一樣會被發現 |
-| npm 外掛 | `dsh-agent-playbook` | 獨立套件 |
-| 專案身份 | `playbook.yaml` 嘅 `name:` | 每個 project 自己嘅，同上面兩個無關 |
-
-新嘢唔應該再用單數寫法 —— 佢係**支援**，唔係**建議**。
-
-## 迴圈
-
-**orient → select → act → verify → record → report → repeat**
-
-| 步驟 | 指令 |
-| --- | --- |
-| 定位 | `pb status` |
-| 揀任務 | `pb next --claim` |
-| 做嘢 | 開 `skills/<id>/SKILL.md`，跟 `processes/<id>.yaml` |
-| 驗證 | `pb validate` + `pb validate --task <id>` |
-| 記錄 | `pb record ...`（done 會被強制驗證） |
-| 報告 | `pb report` |
-
-任務嘅檢查以 playbook 根目錄為 `cwd` 執行，exit 0 為通過。`--skip-checks` 係逃生門，但會蓋印喺
-journal 並且喺報告度標記（`⚠checks-skipped`）—— 匿唔到。
-
-## 多代理（Multi-Agent）
-
-**呢個就係設計重點。** N 個 agent 可以共用同一個 backlog：
-
-- **認領即租約（lease）** —— 認領會鑄造一個 **claim token**。
-- **寫入可追溯** —— 寫入者要用三種方式之一證明自己有權：本身就係 holder、出示 token
-  （`--token` / `PB_CLAIM_TOKEN`）、或者 holder 出現喺佢申報嘅 delegation chain
-  （`PB_AGENT_CHAIN=root,sub,grand`）。
-- **Sub-agent 以自己身份記錄** —— journal row 帶 `agent` + `agent_chain` +
-  `ownership: token|chain`，唔會冒充 parent，所以 fan-out 一定追得返去委派佢嗰個任務。
-  無證明嘅寫入會照記但標記 `ownership: unproven` —— **丟失真實工作比留低一行 unproven 更差**。
-
-**「邊個先寫、邊個後寫、代表邊個寫」係記錄落嚟嘅事實，唔係靠碰撞嘅時間戳推斷：**
-
-- 每次共享狀態寫入都經過**同一個序列化交易**（O_EXCL lock + 原子替換）。
-- 每一行 journal 都帶**單調遞增嘅 `seq`**。
-- `pb release` 將認領還返 pool（`--stale <分鐘>` 清掃被遺棄嘅認領）；`pb unlock` 清走洩漏嘅鎖。
-
-**鎖定規則：** 鎖只會因為**年齡**被打破，永遠唔會用 `process.kill(pid, 0)` 探測持有者死活 ——
-跨容器會講大話，猜錯就整壞狀態。每種鎖有自己嘅 stale window，釋放要 token 授權，
-`pb unlock --force` 係殺死持有者之後嘅明確逃生門。
-
-## WorkTree
-
-每個任務一個真 git worktree，全部子指令**預設 dry-run**，要 `--execute` 才生效：
-
-```bash
-pb worker create <task> --agent <a> --execute   # 每個任務只有一個 live slot（原子）
-pb worker status <task> --json                  # ahead / behind / uncommitted / head
-pb worker exec   <task> -- <cmd>                # 喺 worktree 入面執行指令
-pb worker verify <task>                         # 喺 worktree 入面跑任務檢查
-pb worker merge  <task> --execute               # 受 merge-ready 閘控，未做完唔准合
-pb worker remove <task> --delete-branch --execute
-pb record --task <task> --status done --at <worktree>   # 記錄喺 worker tree 跑過嘅檢查
-```
-
-合併閘讀**分支**而唔係只讀 journal：worktree 唔見咗、dirty、或者**相對 base 零 commit** 都唔准合；
-驗證過期會如實報告而唔係當佢有效。`worker checker` 記錄獨立判決，
-`worker provider-rate-limit` 記錄真實嘅 provider 403/429 冷卻 —— 令「被限流」同「壞咗」分得清。
-
-## 崩潰復原
-
-`memory/journal.ndjson` 係 append-only 紀錄；`memory/backlog-state.json` 只係佢嘅投影（derived data）。
-
-```bash
-pb repair-state --check     # 有 drift 就 exit 1（可入 CI）
-pb repair-state --apply     # 由 journal 重建投影
-```
-
-`pb checkpoint` 會將 drift 同「journal 超前投影」嘅落差報為警告，令無聲分歧喺心跳就浮面。
-
-## DeepSeek Harness 外掛
-
-`dsh-plugin/` 就係 harness 外掛 —— [`dsh-agent-playbook`](https://www.npmjs.com/package/dsh-agent-playbook)，
-已經發佈上 npm。佢提供一個 `playbook` 工具（status / anchor / next / claim / task /
-check / record / worker / init / unlock / repair），將 playbook 自己嘅 skills 註冊成 harness skills
-（`playbook-<id>`），並且喺每一步之前將憲章（North Star、當前 loop、手上任務**同埋佢嘅檢查**）
-注入 agent 嘅 inbox，令 compaction 沖唔走個 plot。佢自帶引擎，所以安裝一步搞掂，亦唔會同測試過嘅
-引擎版本脫節。
-
-兩條邊界規則就係全部設計：
-
-- **佢永遠唔會重新實作任何閘。** 每個動作都係一次 `pb` 呼叫 —— 對「done」有第二種意見，正正係
-  呢個專案拒絕嘅事。
-- **佢 shell out 而唔係 import。** 每個 `pb` 指令都用 `process.exit()` 表達拒絕，所以 in-process
-  呼叫會殺死 **host** 而唔係回傳錯誤。做 subprocess，exit code 才保得住合約。
-
-## 指令速查
-
-| 類別 | 指令 |
-| --- | --- |
-| 迴圈 | `status` · `next --claim` · `record` · `report` · `validate [--task]` |
-| 任務／規劃 | `task show <id>` · `plan --goal ".."` · `runcard list\|show <id>` |
-| 多代理 | `release --task <id> [--token] \| --stale <min>` · `unlock [--force]` · `repair-state [--check\|--apply]` |
-| WorkTree | `worker create\|status\|exec\|verify\|merge\|remove\|checker\|merge-ready\|provider-rate-limit` |
-| Loop epoch | `loop new\|status\|run\|close\|quarantine` · `learn` |
-| 階段 | `cycle [--new]` · `reflect` |
-| Context | `anchor [--brief]` · `checkpoint [--snapshot]` |
-| 程序 | `run -- <cmd>` · `ps` · `stop` |
-| 打包 | `list [processes\|skills\|modes]` · `pack build\|install` |
-| 生命週期 | `scaffold` · `init` · `bootstrap` · `update [--check]` · `help` |
-
-狀態：`todo, in_progress, blocked, done`。完整旗標請跑 `node scripts/pb.mjs help`。
-
-## 目前狀態（講清楚）
-
-| 產物 | 狀態 |
-| --- | --- |
-| 引擎（`agents-playbook`） | **已發佈** `0.5.0` —— repo 已經係 `0.5.1`，但未發佈 |
-| Git tag | 只有 `v0.1.0`、`v0.3`、`v0.3.2`；`v0.4.x` / `v0.5.x` 都未有 tag |
-| Harness 外掛（`dsh-agent-playbook`） | **已發佈** `0.5.1` —— 用 `dsh plugin --profile <p> add dsh-agent-playbook` 安裝（要 pnpm；單純 `npm install` **唔會**啟用佢） |
-| 真實 harness 內驗證 | 待做（一次開機唔係開 Web UI 就係跑 LLM 任務，所以呢步留返俾人） |
-
-## 已知陷阱
-
-呢個 repo **將 `memory/` 納入 git 追蹤**，包括 append-only journal 同共享狀態投影。呢個正正係引擎
-警告嘅共享狀態風險 —— 被追蹤嘅投影係可以被 merge 嘅，而「合併兩個 agent 嘅 journal」冇人做得啱。
-`pb validate` 會警告，`validate --strict` 會當佢致命。想 strict 轉綠：
-
-```bash
-git rm -r --cached memory artifacts
-```
-
-## 快速上手：改成你自己嘅
-
-- 加任務落 `memory/backlog.yaml` —— 盡量俾佢可執行嘅 `acceptance_checks`。
-- 加流程：`processes/<id>.yaml`（＋註冊入 `processes/index.yaml`）同
-  `skills/<id>/SKILL.md`（＋註冊入 `skills/index.yaml`）。
-- 將持久事實寫入 `memory/project-memory.md`。
-
-## 授權
-
-MIT

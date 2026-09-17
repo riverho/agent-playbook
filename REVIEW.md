@@ -1,4 +1,4 @@
-# Agent-Playbook — Architecture Review
+# Agents-Playbook — Architecture Review
 
 **Date:** 2026-06-16
 **Scope:** the whole engine — `playbook.yaml`, `scripts/pb.mjs`, `SKILL.md`, `memory/*`, `processes/*`, `skills/*`, `README.md`, `INSTALL.md`, `HANDOFF-2026-06-11.md`.

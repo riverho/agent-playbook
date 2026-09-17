@@ -12,8 +12,8 @@
 #  carry-on: copy the folder anywhere and it still works.
 # ============================================================================
 
-name: agent-playbook
-version: 0.6.0
+name: agents-playbook
+version: 0.6.1
 description: >-
   A portable, agent-first playbook. Agents loop without friction: orient on the
   master, pick a task, run the matching skill/process, verify with executable
@@ -98,7 +98,7 @@ index:
 # GitHub releases and overlays engine files, preserving user state (memory/, artifacts/).
 # ----------------------------------------------------------------------------
 update:
-  repo: riverho/agent-playbook
+  repo: riverho/agents-playbook
 
 default_mode: coding
 # The reference mode pb-daily-monitor.mjs uses when invoked with no --mode. Declared

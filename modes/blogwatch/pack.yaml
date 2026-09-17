@@ -19,4 +19,4 @@ config_schema:
 license: free
 provenance:
   author: riverho
-  source: "https://github.com/riverho/agent-playbook"
+  source: "https://github.com/riverho/agents-playbook"

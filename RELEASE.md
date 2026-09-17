@@ -7,7 +7,7 @@ not a hand copy — produces the bundle.
 
 | Track | Artifact | Where |
 |---|---|---|
-| GitHub (Open Source) | this repository | `github.com/riverho/agent-playbook` |
+| GitHub (Open Source) | this repository | `github.com/riverho/agents-playbook` |
 | npm — engine | `agents-playbook@<version>` | `npmjs.com/package/agents-playbook` |
 | npm — DSH plugin | `dsh-agent-playbook@<version>` | `npmjs.com/package/dsh-agent-playbook` |
 
@@ -111,7 +111,7 @@ status first, then wait. `npm view <pkg> versions` (plural) is the reliable read
 
 ### Upgrading a profile needs an explicit range
 
-A profile installs with a caret range, and **`^0.5.1` does not include `0.6.0`** — for `0.x`,
+A profile installs with a caret range, and **`^0.6.0` does not include `0.6.1`** — for `0.x`,
 caret is restricted to the same minor. So `dsh plugin --profile <p> add <pkg>` reports
 "Lockfile is up to date, resolution step is skipped" and changes nothing. Move the range
 explicitly:

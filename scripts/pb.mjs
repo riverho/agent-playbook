@@ -3919,7 +3919,7 @@ function cmdScaffold(args) {
 //  no new deps). Engine = scripts/ processes/ skills/ modes/ + docs + package.json.
 //  NEVER touches memory/ or artifacts/. The master version line is bumped in place.
 // ============================================================================
-const UPDATE_REPO = (master.update && master.update.repo) || 'riverho/agent-playbook';
+const UPDATE_REPO = (master.update && master.update.repo) || 'riverho/agents-playbook';
 const ENGINE_DIRS = ['scripts', 'processes', 'skills', 'modes'];
 const ENGINE_FILES = ['SKILL.md', 'AGENTS.md', 'README.md', 'INSTALL.md', 'package.json'];
 

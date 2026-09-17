@@ -1,6 +1,6 @@
 # dsh-agent-playbook
 
-A **DeepSeek Harness** plugin for [Agent-Playbook](https://github.com/riverho/agent-playbook).
+A **DeepSeek Harness** plugin for [Agent-Playbook](https://github.com/riverho/agents-playbook).
 
 The engine's whole thesis is one sentence: **"done" is an exit code, not a claim.** A task's
 `acceptance_checks` are shell commands, and recording it `done` re-runs them and *refuses* if any
@@ -130,7 +130,7 @@ Verified end to end — after that one command,
 `$DSH_HOME/profiles/<profile>/package.json` contains both
 
 ```json
-"dependencies": { "dsh-agent-playbook": "^0.5.1" },
+"dependencies": { "dsh-agent-playbook": "^0.6.0" },
 "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "…", "dsh-agent-playbook"] } }
 ```
 
