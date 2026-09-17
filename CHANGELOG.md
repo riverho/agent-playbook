@@ -11,8 +11,8 @@ Patch. No engine behaviour changed.
 
 ### Changed
 
-- **The npm plugin is `dsh-agents-playbook` (plural).** It was `dsh-agent-playbook`; the
-  rename makes the plugin agree with the engine (`agents-playbook`) and the repository. The
+- **The npm plugin is `dsh-agents-playbook` (plural).** The previous singular spelling is
+  retired; the rename makes the plugin agree with the engine (`agents-playbook`) and the repository. The
   `name` in `dsh-plugin/package.json`, the mounted row in `dsh-plugin/cordis.patch.yml`, every
   install instruction, and the self-dependency guard all move together. Publishing the new
   name is a fresh package — the old one is not a upgrade target, so profiles install
