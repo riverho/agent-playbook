@@ -42,10 +42,13 @@ local*.*
 # Code deliberately cut from the engine (old spec/workmap layer). Safe to delete.
 attic/
 
-# Generated human-facing reports are artifacts, not source.
-# Keep the folder, ignore the rollups. Comment this out if you want reports versioned.
-artifacts/reports/*.md
-!artifacts/reports/.gitkeep
+# pb runtime state is LOCAL TRUTH, not source. A git-tracked journal/projection is
+# reverted by merges (checkout/stash) and silently loses records — the engine's
+# tracked-state guard refuses an honest `loop close --status done` while they are
+# committed. `git rm -r --cached memory artifacts` untracked them; these rules keep
+# them untracked. The files stay on disk and `pb` owns them.
+memory/
+artifacts/
 
 # Probe scaffolding is generated per machine (scripts/probe-stop-gate.mjs writes a patch
 # containing an absolute module specifier). Regenerated on demand, never committed.
