@@ -1,9 +1,9 @@
 # Agents-Playbook
 
-Current release: **v0.6.2** — **multi-agent leases**, complete **worktrees**, crash recovery, the
+Current release: **v0.6.3** — **multi-agent leases**, complete **worktrees**, crash recovery, the
 **DeepSeek Harness plugin** (`dsh-agents-playbook`), and the **Stop gate** that enforces the loop at
 the harness boundary. On npm as [`agents-playbook`](https://www.npmjs.com/package/agents-playbook)
-· [what's in it](#whats-in-v062).
+· [what's in it](#whats-in-v063).
 
 > **Done is an exit code, not prose.** The kernel is a `pb record --status done` that re-runs each
 > task's `acceptance_checks` (shell commands) and *refuses* on failure. Anchoring, the North Star
@@ -30,11 +30,26 @@ Agents lose the thread between sessions, drift from process, and — worst of al
 That's the whole thesis. No specs pipeline, no DAG scheduler, no debt ledger — the playbook earns
 complexity only when a real workload demands it.
 
-## What's in v0.6.2
+## What's in v0.6.3
 
 The 0.6.x line turned a single-agent loop into a shared one, then closed the last gap where the
 harness only *asked* the agent to verify. Existing single-agent playbooks keep working unchanged —
 `pb next --claim`, `pb record` and `acceptance_checks` behave as before.
+
+v0.6.3 is a patch on top: **the entry point caught up to the engine it ships**, and the **OpenCode
+adapter became multi-agent**.
+
+- **The entry point now covers modes.** `SKILL.md` was silent about the mode catalog, so its
+  skills-first routing rule pointed a literal reader at a path that does not exist for mode-local
+  skills (`modes/<mode>/skills/…`). It now documents modes, the autonomous runner (`pb loop run
+  --auto`) and flows, and the plugin's real install state; `check-entry-docs.mjs` asserts that
+  coverage so it cannot drift silently again.
+- **OpenCode adapter — multi-agent identity.** Every shell and plugin heartbeat carries the runtime
+  and a stable session-scoped agent id, plus any delegated proof (`PB_AGENT_CHAIN`,
+  `PB_CLAIM_TOKEN`); records are attributable and two sessions can share one backlog. Pinned by
+  `check-opencode-adapter.mjs`.
+- Smaller fixes: `pb help` lists the previously hidden `mode` verb, and the master's cycle brief
+  says **five** questions (it said four; the engine ships five).
 
 ### Multi-agent leases and attributable writes
 
@@ -404,9 +419,9 @@ Being explicit about what is shipped and what is not:
 
 | Artifact | State |
 | --- | --- |
-| Engine (`agents-playbook`) | **published**, `0.6.0` — the repo is at `0.6.2`, not yet published |
-| Git tags | `v0.1.0`, `v0.3`, `v0.3.2`, `v0.6.0`, `v0.6.1` |
-| Harness plugin (`dsh-agents-playbook`) | **pending**, `0.6.2` — renamed to the plural in 0.6.2; not yet on npm under the new name. Install with `dsh plugin --profile <p> add dsh-agents-playbook@^0.6.2` once published (needs pnpm; plain `npm install` does **not** enable it) |
+| Engine (`agents-playbook`) | **repo + tag** `0.6.3`; npm latest is `0.6.2` — the `0.6.3` publish is pending a valid npm token |
+| Git tags | `v0.1.0`, `v0.3`, `v0.3.2`, `v0.6.0`, `v0.6.1`, `v0.6.2`, `v0.6.3` |
+| Harness plugin (`dsh-agents-playbook`) | **repo + tag** `0.6.3`; npm latest is `0.6.2` — the `0.6.3` publish is pending. Install `dsh plugin --profile <p> add dsh-agents-playbook@^0.6.3` once published (needs pnpm; plain `npm install` does **not** enable it) |
 | Live in-harness verification | pending (a boot either serves the Web UI or runs an LLM task, so it stays a human step) |
 
 ## What was deliberately cut

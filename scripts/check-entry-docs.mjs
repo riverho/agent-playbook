@@ -46,6 +46,11 @@ const REQUIRED = [
   ['worktrees', /--at\b/, 'recording a done whose checks ran in the worktree'],
   ['harness', /dsh-plugin|DeepSeek Harness/i, 'where the harness integration lives'],
   ['harness', /playbook action=|`playbook` tool/i, 'the tool a harness agent drives'],
+  ['modes', /pb list modes|`list modes`/, 'the mode catalog menu'],
+  ['modes', /pb mode show|`mode show`/, "a mode's resolved skill+process pairs"],
+  ['modes', /modes\/<|mode-local/i, 'mode-local skills live under modes/<mode>/skills/...'],
+  ['orchestrator', /loop run --auto/, 'the autonomous runner'],
+  ['orchestrator', /pb-flow|flows\//, 'multi-mode flows'],
   ['loop', /--claim/, 'how work is taken'],
   ['loop', /validate --task/, 'how one task is verified'],
   ['loop', /journal\.ndjson/, 'the append-only record'],
@@ -64,6 +69,18 @@ check('the entry point still points at the skills index (it routes, it does not 
 check('the entry point still points at project memory', () => {
   if (!/project-memory\.md/.test(entry)) throw new Error('no reference to memory/project-memory.md');
 });
+
+// The phase-loop question count is stated in three places (master, entry point, CLI).
+// They drifted once (master said "four", the engine ships five). Assert agreement here so a
+// re-word that reintroduces the drift fails the suite instead of waiting to be noticed.
+{
+  const master = readFileSync(resolve(ROOT, 'playbook.yaml'), 'utf8');
+  check('the master, entry point and engine agree the cycle brief has five questions', () => {
+    if (/four questions/i.test(master)) throw new Error('playbook.yaml says "four questions"');
+    if (!/five questions/i.test(master)) throw new Error('playbook.yaml does not say "five questions"');
+    if (!/five questions/i.test(entry)) throw new Error('SKILL.md does not say "five questions"');
+  });
+}
 
 // Every `pb <verb>` named in the entry point must be a verb the CLI actually accepts.
 // Documentation that teaches a command which does not exist is worse than no docs.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Acceptance checks for the OpenCode adapter (adapters/opencode/).
 // Usage: node scripts/check-opencode-adapter.mjs <part>
-//   part = skeleton | plugin | commands | agent | inject | all
+//   part = skeleton | plugin | commands | agent | inject | multi | all
 // Exit 0 = the named part's artifacts exist and are well-formed.
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -65,10 +65,33 @@ function checkInject() {
     'opencode profile does not map any lifecycle event to an anchor/checkpoint command');
 }
 
+// The adapter's half of the engine's multi-agent contract (playbook >= 0.5):
+// every write must carry who wrote it, and delegated proof must be forwarded.
+function checkMultiAgent() {
+  const src = text('plugins/opencode-playbook.js');
+  must(/PB_RUNTIME/.test(src), 'plugin does not stamp PB_RUNTIME (runtime attribution)');
+  must(/PB_AGENT_ID/.test(src), 'plugin does not stamp PB_AGENT_ID (agent attribution)');
+  must(/PB_SESSION_ID/.test(src), 'plugin does not forward the session id as PB_SESSION_ID');
+  must(/PB_CLAIM_TOKEN/.test(src) && /PB_AGENT_CHAIN/.test(src),
+    'plugin does not forward delegated claim proof (PB_CLAIM_TOKEN / PB_AGENT_CHAIN)');
+  must(/\.env\(/.test(src), 'plugin does not stamp identity on its own pb calls');
+  const agent = text('agents/playbook.md');
+  must(/claim token/i.test(agent), 'agent doc does not explain the claim token');
+  must(/PB_AGENT_CHAIN/.test(agent), 'agent doc does not explain delegation chains');
+  must(/release --task|pb release/i.test(agent), 'agent doc does not explain pb release');
+  must(/worker/.test(agent), 'agent doc does not cover worker worktrees');
+  const readme = text('README.md');
+  must(/multi-agent/i.test(readme), 'README does not document multi-agent identity');
+}
+
 const part = process.argv[2] || 'all';
+const PARTS = {
+  skeleton: checkSkeleton, plugin: checkPlugin, commands: checkCommands,
+  agent: checkAgent, inject: checkInject, multi: checkMultiAgent,
+};
 const parts = part === 'all'
-  ? { checkSkeleton, checkPlugin, checkCommands, checkAgent, checkInject }
-  : { [part]: { skeleton: checkSkeleton, plugin: checkPlugin, commands: checkCommands, agent: checkAgent, inject: checkInject }[part] };
+  ? PARTS
+  : { [part]: PARTS[part] };
 
 for (const fn of Object.values(parts)) {
   if (typeof fn !== 'function') { console.error(`unknown part: ${part}`); process.exit(2); }

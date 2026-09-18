@@ -4110,6 +4110,9 @@ function cmdHelp() {
     anchor [--brief]       Print the constitution to re-inject (keeps the playbook salient)
     checkpoint [--snapshot]  Heartbeat: re-anchor + detect drift; --snapshot writes memory/RESUME.md
     list [processes|skills|modes]  Print the indices ("list modes" prints the mode catalog)
+    mode [show|skills|processes] [<id>]
+                           The active mode, or a named mode's menu: its resolved skill+process
+                           pairs, directive and principles (task.mode ?? loop.mode ?? default_mode).
     pack build <id> [--out <dir>] | pack install <file.pbpack> [--root <dir>] [--force]
                            Build a mode pack archive / install one into a playbook root
     update [--check] [--force] [--source <dir>] [--include-master]

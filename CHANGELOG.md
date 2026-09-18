@@ -5,6 +5,32 @@ makes the pair identifiable. `npm run check:version` guards the engine's own
 `package.json` ↔ `playbook.yaml` agreement, and `npm run pack:plugin` refuses to build a
 tarball whose plugin version differs from the engine it carries.
 
+## 0.6.3 — the entry point catches up, and the OpenCode adapter goes multi-agent
+
+Patch. No engine gate behaviour changed.
+
+### Added
+
+- **OpenCode adapter — multi-agent identity.** Every shell and every plugin heartbeat now carries
+  `PB_ROOT`, `PB_RUNTIME=opencode`, a stable session-scoped `PB_AGENT_ID`, `PB_SESSION_ID`, and any
+  delegated `PB_AGENT_CHAIN` / `PB_PARENT_AGENT_ID` / `PB_CLAIM_TOKEN` the launcher set. Records are
+  attributable to the session instead of an anonymous `agent`, so two OpenCode sessions can share one
+  backlog without impersonating each other. The adapter never mints a claim token. Pinned by the new
+  `multi` part of `check-opencode-adapter.mjs`, now wired into `npm test`.
+
+### Fixed
+
+- **The entry point now describes the engine that ships.** `SKILL.md` was silent about **modes** (the
+  catalog, `pb mode show`, and mode-local skills under `modes/<mode>/skills/…`), so its skills-first
+  routing rule sent a literal reader to a path that does not exist for mode-local skills. It now
+  documents modes, the autonomous runner (`pb loop run --auto`), flows (`pb-flow.mjs` / `flows/`), and
+  the harness plugin's real install state. `scripts/check-entry-docs.mjs` asserts mode/orchestrator
+  coverage, so the entry point cannot drift silently again.
+- **`pb help` lists the `mode` verb**, which existed in the dispatcher but was undocumented (only
+  `list modes` was shown).
+- **The master said the cycle brief had "four" questions**; the engine ships five. Corrected, with a
+  master/entry/engine agreement check in `check-entry-docs.mjs`.
+
 ## 0.6.2 — the plugin takes the plural name
 
 Patch. No engine behaviour changed.

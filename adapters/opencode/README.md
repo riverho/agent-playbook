@@ -40,13 +40,36 @@ Co-pilot mode (OpenCode performs the `act` step itself for tasks that can't be
 expressed as executable commands) is a later layer — not needed while backlogs
 stay fully executable.
 
+## Multi-agent identity (playbook v0.6.2)
+
+The plugin is the adapter's half of the engine's multi-agent contract. On every
+shell it stamps the identity a `pb` write should carry:
+
+| Env | Set from | Purpose |
+| --- | --- | --- |
+| `PB_ROOT` | discovered playbook root | carry-on resolution |
+| `PB_RUNTIME` | `opencode` | labels `origin_runtime` on each record |
+| `PB_AGENT_ID` | `opencode:<session id>` | who wrote the row |
+| `PB_SESSION_ID` | the OpenCode session | provenance |
+| `PB_AGENT_CHAIN` / `PB_PARENT_AGENT_ID` / `PB_CLAIM_TOKEN` | forwarded when a launcher set them | delegated entitlement |
+
+The plugin never mints a claim token — `pb next --claim` does, and the token is
+the agent's to present. A sub-agent handed `PB_AGENT_CHAIN` records as itself
+instead of impersonating its parent; a write that cannot prove ownership is still
+recorded, but flagged `ownership: unproven` rather than dropped. The plugin's own
+heartbeat calls carry the same identity, so `loop run`'s records are attributed
+to the session, not to an anonymous `agent`.
+
+This is what lets several OpenCode sessions (and other hosts) share one backlog:
+who claimed a task, who wrote last, and on whose behalf are recorded facts.
+
 ## Layout
 
 ```
 adapters/opencode/
   opencode.json          config: registers the plugin
   plugins/
-    opencode-playbook.js  session.idle driver + shell.env anchor + session.created re-anchor
+    opencode-playbook.js  identity + session.idle driver + shell.env anchor + session.created re-anchor
   commands/
     pb-loop.md            /pb-loop  → run one auto pass (defer-blocked)
     pb-status.md          /pb-status → orient

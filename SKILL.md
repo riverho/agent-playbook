@@ -111,11 +111,27 @@ pb checkpoint              # heartbeat: reports drift and a lost write as warnin
 
 ## Skills-first routing
 
-1. `pb next` tells you which `skill` a task uses.
-2. Open that skill in `skills/<id>/SKILL.md`. It points to a canonical process in `processes/`.
+1. `pb next` tells you which `skill` a task uses and which **mode** is active.
+2. Open that skill. Engine skills live at `skills/<id>/SKILL.md`; **mode-local** skills live at
+   `modes/<mode>/skills/<id>/SKILL.md`. Either file points to a canonical process in `processes/`.
+   Do not assume the `skills/` prefix — `pb mode show` prints the path.
 3. Follow the process steps. Only improvise when **no** skill fits.
 4. If you had to improvise something reusable, **write a new skill + process** and add them to
-   `skills/index.yaml` and `processes/index.yaml`. That is how the playbook learns.
+   `skills/index.yaml` and `processes/index.yaml` (or the mode's own index). That is how the
+   playbook learns.
+
+## Modes (streamline sets)
+
+A **mode** is a persona plus a skill/process pack mounted on the invariant floor. Resolution is
+`task.mode ?? loop.mode ?? default_mode` (see `playbook.yaml`); the default is `coding`. Modes ride
+ON enforcement — none skips `acceptance_checks`.
+
+- `pb list modes` — the catalog (`modes/index.yaml`), one line each.
+- `pb mode show <id>` — a mode's resolved skill+process pairs, plus its directive and principles.
+- `pb mode` — the active mode (no argument).
+
+Engine skills are global; mode-local skills are contributed only while their mode is active. A task
+can name its own mode, so the same backlog can carry coding work and a monitoring run side by side.
 
 ### Out-of-scope capture (the default)
 
@@ -170,6 +186,12 @@ The `playbook` tool drives exactly the commands on this page; it never re-implem
 stamps your agent identity (`PB_AGENT_ID`, `PB_SESSION_ID`, `PB_AGENT_CHAIN`) so multi-agent writes
 stay attributable. The playbook's own skills are exposed to the harness as `playbook-<id>`.
 
+> **Install state (mind the plural).** The plugin is the separate npm package
+> `dsh-agents-playbook`; installing it needs **pnpm** (`dsh plugin --profile <p> add
+> dsh-agents-playbook@^0.6.2`) — a plain `npm install` does not enable it. At v0.6.2 the plural
+> package is **not yet published** (0.6.0 shipped under the old singular spelling), so pin
+> `@^0.6.2` only once the release is on npm. `README.md` → "What's shipped" is the current state.
+
 ## The phase loop (cycle → reflect)
 
 The task loop above runs *inside* a larger phase loop. The **North Star** (`north_star` in
@@ -208,6 +230,16 @@ New records are stamped with the active `loop_id`; long-running commands should 
 - Contaminated close: `node scripts/pb.mjs loop close --status failed --reason "..."`.
 - Smarter next loop: after a failed loop, record user/agent reflection with
   `node scripts/pb.mjs learn --loop <id> --source user --notes "..."` before opening the next loop.
+
+### Running the loop without a human
+
+- **Autonomous:** `node scripts/pb.mjs loop run --auto` claims, executes, runs each task's checks,
+  and records `done`/`blocked` on its own (retrying red checks). It stops on blockers, `manual`
+  tasks, honor-only tasks, or an empty backlog — it never grants a pass a check did not earn.
+- **Flows (multi-mode pipelines):** `node scripts/pb-flow.mjs --flow <id>` runs `flows/<id>.yaml`
+  steps in order — one epoch, fail-fast — handing off through explicit artifact dirs. The monitoring
+  scaffold driver is `node scripts/pb-daily-monitor.mjs --mode <id>` (default `default_monitor_mode`,
+  declared in `playbook.yaml`).
 
 Promote reusable lessons into `memory/project-memory.md`, backlog tasks with acceptance checks, or
 new/updated skills and processes. Keep raw details in `memory/lessons.ndjson`.
